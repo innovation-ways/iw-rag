@@ -5,8 +5,21 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # One grouped PR for routine bumps instead of one-per-dependency (less noise).
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+    ignore:
+      # Retired Chainlit frontend — not deployed (see frontend/CLAUDE.md). Do not bump.
+      - dependency-name: "chainlit"
+      # langchain-community is intentionally pinned <0.4 (ragas vertexai import;
+      # see pyproject.toml dependency-groups). Dependabot must not fight this pin.
+      - dependency-name: "langchain-community"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]

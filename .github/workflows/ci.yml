@@ -21,8 +21,10 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sync (dev group)
-        run: uv sync --group dev --frozen
+      - name: Sync (dev + pdf groups)
+        # pdf group provides playwright, imported (lazily) by api/benchmark_routes.py;
+        # mypy --strict needs it present to type the PDF-export route.
+        run: uv sync --group dev --group pdf --frozen
 
       - name: Lint (ruff)
         run: |
@@ -52,5 +54,5 @@ jobs:
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
-      - run: uv sync --group dev --frozen
+      - run: uv sync --group dev --group pdf --frozen
       - run: uv run pre-commit run --all-files
