@@ -76,29 +76,38 @@ def test_build_compare_html_is_a_full_document() -> None:
 
 
 def test_build_compare_html_has_legend_with_run_colours() -> None:
+    """Legend block carries both run colours and labels in document order."""
     html = build_compare_html(_payload())
     assert "legend" in html
     assert "#2DD4BF" in html  # baseline run colour
     assert "#a78bfa" in html  # second run colour
     assert "BENCH-a" in html and "BENCH-b" in html
     assert "baseline" in html
+    # BENCH-a is the baseline and must appear before BENCH-b in the legend.
+    assert html.index("BENCH-a") < html.index("BENCH-b")
 
 
 def test_build_compare_html_has_aggregate_and_delta_sections() -> None:
+    """Aggregate section precedes the delta section; positive delta uses '+' prefix."""
     html = build_compare_html(_payload())
     assert "Aggregate" in html
     assert "Baseline-relative deltas" in html
     # delta sign rendered with a leading + for positive deltas
     assert "+0.200" in html
+    # Aggregate bars section must appear before the baseline-relative deltas section.
+    assert html.index("Aggregate") < html.index("Baseline-relative deltas")
 
 
 def test_build_compare_html_has_heatmaps_and_answers() -> None:
+    """Heatmap section precedes answers section; item question and answer text appear."""
     html = build_compare_html(_payload())
     assert "heatmap" in html
     assert "Per-item heatmaps" in html
     assert "Answers per item" in html
     assert "Ans-A" in html
     assert "What is X?" in html
+    # Per-item heatmaps must come before the answers appendix.
+    assert html.index("Per-item heatmaps") < html.index("Answers per item")
 
 
 def test_build_compare_html_omits_answers_when_no_samples() -> None:
@@ -109,9 +118,12 @@ def test_build_compare_html_omits_answers_when_no_samples() -> None:
 
 
 def test_build_compare_html_renders_underpowered_caveat() -> None:
+    """Underpowered caveat block appears before the aggregate section in the document."""
     html = build_compare_html(_payload())
     assert "Underpowered" in html
     assert "150" in html
+    # The caveat block is rendered before the Aggregate section.
+    assert html.index("Underpowered") < html.index("Aggregate")
 
 
 def test_build_compare_html_no_external_cdn() -> None:
@@ -127,11 +139,14 @@ def test_build_compare_html_no_external_cdn() -> None:
 
 
 def test_build_compare_html_renders_conclusion_when_present() -> None:
+    """Conclusion section appears before the aggregate section when a conclusion is supplied."""
     payload = _payload()
     payload["conclusion"] = "Mistral is the strongest overall: +0.06 nDCG@5 vs the baseline."
     html = build_compare_html(payload)
     assert "Conclusion &amp; reasoning" in html
     assert "Mistral is the strongest overall" in html
+    # Conclusion block must precede the Aggregate bars section.
+    assert html.index("Conclusion &amp; reasoning") < html.index("Aggregate")
 
 
 def test_build_compare_html_omits_conclusion_when_absent() -> None:

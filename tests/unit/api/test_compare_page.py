@@ -35,10 +35,13 @@ def test_compare_page_html_returns_non_empty_document() -> None:
 
 
 def test_compare_page_html_contains_brand_palette() -> None:
+    """All three primary brand palette tokens appear in the CSS; teal appears multiple times."""
     page = compare_page_html()
     assert "#0D9488" in page  # teal-deep
     assert "#2DD4BF" in page  # teal
     assert "#181D29" in page  # ink
+    # teal (#2DD4BF) is used more than once (root var + at least one direct reference).
+    assert page.count("#2DD4BF") >= 2
 
 
 def test_compare_page_html_has_no_external_cdn() -> None:
@@ -106,6 +109,7 @@ def test_compare_page_html_has_compare_nav_after_results() -> None:
 
 
 def test_compare_page_html_references_endpoints() -> None:
+    """All three compare endpoints are referenced; PDF endpoint appears after data endpoint."""
     page = compare_page_html()
     assert "/benchmark/reports" in page  # picker source
     assert "/benchmark/compare/multi" in page  # data endpoint
@@ -113,6 +117,8 @@ def test_compare_page_html_references_endpoints() -> None:
     # The data fetch encodes the ids + baseline query params.
     assert "ids=" in page
     assert "baseline=" in page
+    # The data endpoint appears before the PDF endpoint in the JS source.
+    assert page.index("/benchmark/compare/multi?") < page.index("/benchmark/compare/multi/pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -121,12 +127,15 @@ def test_compare_page_html_references_endpoints() -> None:
 
 
 def test_compare_page_html_has_run_picker_and_baseline() -> None:
+    """Picker, baseline selector, compare button, and MAX_RUNS cap all present in order."""
     page = compare_page_html()
     assert 'id="pickBody"' in page
     assert 'id="baselineSel"' in page
     assert 'id="compareBtn"' in page
     # 2..5 run cap is enforced client-side (UX honesty; API is authoritative).
     assert "MAX_RUNS" in page
+    # The picker appears before the compare button in the markup.
+    assert page.index('id="pickBody"') < page.index('id="compareBtn"')
 
 
 def test_compare_page_html_has_render_anchors() -> None:
@@ -142,15 +151,21 @@ def test_compare_page_html_has_render_anchors() -> None:
 
 
 def test_compare_page_html_has_pdf_button() -> None:
+    """PDF button id and label appear exactly once each."""
     page = compare_page_html()
     assert 'id="pdfBtn"' in page
     assert "Generate Report (PDF)" in page
+    # The button id and label should each appear exactly once.
+    assert page.count('id="pdfBtn"') == 1
 
 
 def test_compare_page_html_renders_underpowered_caveat() -> None:
+    """Underpowered caveat CSS class is defined and 'Underpowered' text is present."""
     page = compare_page_html()
     assert "caveat-box" in page
     assert "Underpowered" in page
+    # The caveat-box class must be defined in the CSS (style block) before the JS uses it.
+    assert page.index(".caveat-box") < page.index("Underpowered")
 
 
 def test_compare_page_html_handles_400_and_404() -> None:

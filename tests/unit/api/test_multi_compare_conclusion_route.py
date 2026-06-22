@@ -137,8 +137,9 @@ def test_conclusion_none_when_writer_unavailable() -> None:
 
 
 def test_conclusion_404_when_id_unknown() -> None:
+    """Service returning None triggers NotFoundError with the 'unknown' message."""
     req = _request(_FakeService(None))  # service returns None → unknown id
-    with pytest.raises(NotFoundError):
+    with pytest.raises(NotFoundError, match=r"one or more report ids are unknown"):
         asyncio.run(br.compare_benchmark_reports_multi_conclusion(req, None, ids="a,b"))
 
 

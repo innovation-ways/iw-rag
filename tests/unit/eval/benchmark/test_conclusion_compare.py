@@ -58,13 +58,17 @@ def _payload() -> dict[str, Any]:
 
 
 def test_compare_prompt_marks_baseline_and_modules() -> None:
+    """Baseline run is marked '(BASELINE)' and precedes the comparison run in the prompt."""
     prompt = build_compare_user_prompt(_payload())
     assert "BENCH-1 (BASELINE)" in prompt
     assert "modules: qwen3-14b / bge-m3" in prompt
     assert "BENCH-2" in prompt
+    # The baseline run section must appear before the non-baseline run section.
+    assert prompt.index("BENCH-1 (BASELINE)") < prompt.index("BENCH-2")
 
 
 def test_compare_prompt_includes_means_and_signed_deltas() -> None:
+    """Means use 3-decimal format; deltas carry explicit sign; significance is labelled."""
     prompt = build_compare_user_prompt(_payload())
     assert "ndcg_at_5: 0.600" in prompt  # baseline mean
     assert "ndcg_at_5: +0.060" in prompt  # signed delta vs baseline
@@ -72,12 +76,17 @@ def test_compare_prompt_includes_means_and_signed_deltas() -> None:
     # Significance is surfaced per delta.
     assert "significant" in prompt
     assert "not significant" in prompt
+    # The ndcg_at_5 baseline mean appears before its delta entry.
+    assert prompt.index("ndcg_at_5: 0.600") < prompt.index("ndcg_at_5: +0.060")
 
 
 def test_compare_prompt_surfaces_underpowered_caveat() -> None:
+    """Underpowered caveat is rendered as a 'CAVEAT' block containing the min-queries threshold."""
     prompt = build_compare_user_prompt(_payload())
     assert "CAVEAT" in prompt
     assert "150" in prompt
+    # The caveat block must contain the threshold in the same region of the prompt.
+    assert prompt.index("CAVEAT") < prompt.index("150")
 
 
 def test_compare_prompt_omits_deltas_for_baseline() -> None:
@@ -125,7 +134,11 @@ def test_writer_returns_none_on_empty_text() -> None:
 
 
 def test_conclusion_module_exposes_compare_writer() -> None:
+    """Module __all__ exposes both the compare writer class and the prompt builder."""
     from iw_rag.eval.benchmark import conclusion as mod
 
     assert "CompareConclusionWriter" in mod.__all__
     assert "build_compare_user_prompt" in mod.__all__
+    # Exactly these two compare-specific symbols must be in __all__ (not zero, not buried).
+    compare_symbols = [s for s in mod.__all__ if "compare" in s.lower()]
+    assert len(compare_symbols) == 2

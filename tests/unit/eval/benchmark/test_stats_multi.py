@@ -134,3 +134,6 @@ def test_compare_multi_exposes_public_symbol() -> None:
     """``compare_multi`` + ``MultiComparisonResult`` are part of the module surface."""
     assert "compare_multi" in stats.__all__
     assert "MultiComparisonResult" in stats.__all__
+    # Neither symbol is accidentally absent — confirm exact membership count for multi symbols.
+    multi_symbols = [s for s in stats.__all__ if "multi" in s.lower() or "Multi" in s]
+    assert len(multi_symbols) == 2
