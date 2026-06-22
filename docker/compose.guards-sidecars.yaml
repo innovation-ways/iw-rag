@@ -1,0 +1,84 @@
+# Guardrail sidecars overlay — the two local guard model servers the api's
+# guard chain calls. Codifies what were previously hand-run `docker run`
+# containers (restart=no, injguard's server living in /tmp → lost on reboot).
+#
+# ALWAYS layer this ON TOP of compose.yaml (+ compose.gpu.yaml): it relies on the
+# base file's `hf-cache` volume and the shared `iw-rag_default` network so the api
+# can reach the guards by service name. Pair it with compose.guards.yaml, which
+# points the api's guard endpoints at `injguard:8003` and `iw-rag-vllm-guard:8004`.
+#
+#   docker compose --project-directory . \
+#     -f docker/compose.yaml -f docker/compose.gpu.yaml \
+#     -f docker/compose.guards-sidecars.yaml -f docker/compose.guards.yaml up -d
+#
+# Driven by `./rag.sh guards up|down|status`.
+services:
+  # Prompt-injection classifier (CPU-only, no VRAM). Stand-in for the gated
+  # Prompt Guard 2: serves protectai/deberta-v3-base-prompt-injection-v2 over the
+  # TEI-style /classify contract. Reached over the compose network as injguard:8003.
+  injguard:
+    image: python:3.12-slim
+    container_name: injguard
+    environment:
+      HF_HOME: /cache
+      HF_TOKEN: ${HF_TOKEN:-}
+    command:
+      - sh
+      - -c
+      - >-
+        pip install -q torch --index-url https://download.pytorch.org/whl/cpu &&
+        pip install -q transformers fastapi 'uvicorn[standard]' sentencepiece &&
+        python -m uvicorn --app-dir /app serve_injection_guard:app --host 0.0.0.0 --port 8003
+    volumes:
+      - ./docker/guards/serve_injection_guard.py:/app/serve_injection_guard.py:ro
+      - hf-cache:/cache
+    expose:
+      - "8003"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8003/health')\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 300s   # first boot pip-installs torch+transformers
+      retries: 5
+    restart: unless-stopped
+
+  # Granite Guardian 3.3 8B groundedness/safety judge (bitsandbytes 4-bit,
+  # ~0.20 of the 32 GB card). OpenAI-compatible; reached as iw-rag-vllm-guard:8004/v1.
+  # The service name MUST match the host in compose.guards.yaml's GUARD_SAFETY endpoint.
+  iw-rag-vllm-guard:
+    image: vllm/vllm-openai:v0.11.0
+    container_name: iw-rag-vllm-guard
+    ipc: host
+    environment:
+      VLLM_ATTENTION_BACKEND: ${VLLM_ATTENTION_BACKEND:-TRITON_ATTN}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    command:
+      - --model
+      - ibm-granite/granite-guardian-3.3-8b
+      - --quantization
+      - bitsandbytes
+      - --max-model-len
+      - "2048"
+      - --gpu-memory-utilization
+      - "0.20"
+      - --enforce-eager
+      - --port
+      - "8004"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "8004:8004"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://localhost:8004/health')\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 5
+    restart: unless-stopped

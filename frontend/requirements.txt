@@ -1,0 +1,4 @@
+# Frontend deps (pin@install). The frontend is a separate process from the
+# src/iw_rag package and depends only on Chainlit + httpx.
+chainlit>=1.3
+httpx>=0.27

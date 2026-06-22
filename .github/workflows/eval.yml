@@ -1,0 +1,105 @@
+name: eval-gate
+
+# Runs the CI regression gate on every PR.
+#
+# The judge-free retrieval gate (Recall@10 floor) always runs — no GPU needed.
+# The judged faithfulness gate skips with a warning when VLLM_JUDGE_URL is
+# not set (the judge is not provisioned in standard CI runners).
+#
+# promptfoo (Phase-3 guard/red-team gate) is scaffolded here but NOT run in
+# Phase 1 — it is gated to Phase 3 (task-3.5-guardrail-eval).
+#
+# References:
+# - task-1.4-ci-regression-gate §7 (CI workflow)
+# - ADR-013 (DeepEval + promptfoo CI gates)
+# - engineering-conventions §4 (quality gates)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Judge endpoint — unset in standard CI (judged tests skip with warning).
+      # Set VLLM_JUDGE_URL in a self-hosted runner to enable the judged gate.
+      VLLM_JUDGE_URL: ""
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      # Sync dev group (always present) + eval-judges group for deepeval.
+      # deepeval is lazily imported in tests, so the test suite remains
+      # collectable without it — but the eval-ci gate needs it installed.
+      - name: Sync (dev + eval-judges groups)
+        run: uv sync --group dev --group eval-judges --frozen
+
+      # -------------------------------------------------------------------
+      # Always-on: judge-free unit tests for the gate logic (no DB/GPU).
+      # These are the pure meta-tests from tests/unit/test_ci_gate.py that
+      # verify the gate actually bites (RED evidence, task-1.4).
+      # -------------------------------------------------------------------
+      - name: Run gate meta-tests (pure, always on)
+        run: uv run pytest tests/unit/test_ci_gate.py -v --tb=short
+
+      # -------------------------------------------------------------------
+      # Always-on: eval gate smoke tests (no DB/GPU needed for gate logic).
+      # These run the gate-logic smoke tests in tests/eval/ without --run-live.
+      # -------------------------------------------------------------------
+      - name: Run eval gate smoke tests (no live endpoints)
+        run: uv run pytest tests/eval/ -v --tb=short -q
+        # Note: @pytest.mark.live tests are skipped by default (no --run-live).
+        # The skipif guard on the faithfulness live test checks VLLM_JUDGE_URL.
+
+      # -------------------------------------------------------------------
+      # Always-on: experiment #9 trajectory gate (CPU-only, deterministic).
+      # The structural invariants I1-I4 + the validity/route-accuracy floors run
+      # on mocked sample sets — no GPU, no judge.  This is the per-PR gate that
+      # fails CI when the loop emits answers without passing the grounding grade,
+      # refuses silently, or thrashes its retry budget. See
+      # docs/build/03-tasks/trajectory-eval/.
+      # -------------------------------------------------------------------
+      - name: Run trajectory gate (experiment #9, no GPU)
+        run: >
+          uv run pytest
+          tests/eval/test_trajectory_gate.py
+          tests/unit/eval/test_trajectory_metrics.py
+          tests/unit/eval/test_experiments_trajectory.py
+          -v --tb=short -q
+
+      # -------------------------------------------------------------------
+      # Eval-judge unit tests. The eval-judges group is synced above, so ragas
+      # IS installed here — the RagasRunner.score() tests (importorskip("ragas"))
+      # actually run, unlike the dev-group-only ci.yml floor run where they skip.
+      # -------------------------------------------------------------------
+      - name: Run eval-judge unit tests (ragas installed)
+        run: uv run pytest tests/unit/eval/test_ragas_runner.py -v --tb=short
+
+      # -------------------------------------------------------------------
+      # Deferred (Phase 3): promptfoo guard/red-team gate.
+      # Scaffolded here but not executed in Phase 1.
+      # To enable: uncomment when task-3.5-guardrail-eval is complete and
+      # Node.js + promptfoo are available on the runner.
+      # -------------------------------------------------------------------
+      # - name: Install promptfoo (Phase 3)
+      #   run: npm install -g promptfoo
+      # - name: Run promptfoo guard gate (Phase 3)
+      #   run: >
+      #     promptfoo eval
+      #     --config tests/eval/promptfoo/promptfooconfig.yaml
+      #     --fail-on-error
+      #   env:
+      #     IW_RAG_API_URL: http://localhost:8000
+      #     IW_RAG_STATIC_TOKEN: ${{ secrets.IW_RAG_STATIC_TOKEN }}

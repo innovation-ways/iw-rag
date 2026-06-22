@@ -1,0 +1,94 @@
+# Judge–human calibration slice for FAITHFULNESS (Cohen's κ).
+#
+# Each example is a (question, context, answer) triple plus a `human_label`:
+#   true  = the answer IS faithful (every claim supported by the context)
+#   false = the answer is UNfaithful (contradicts or fabricates beyond context)
+#
+# The labels below are PROPOSED ground truth — each example is constructed so the
+# correct label is unambiguous from the context (faithful answers paraphrase the
+# context; unfaithful answers state a wrong number or an unsupported claim).
+# REVIEW these before publishing a κ number: edit any `human_label` you disagree
+# with, then re-run `scripts/run_kappa_eval.py`. κ is computed between these
+# human labels and the live Lynx-8B judge's verdicts.
+#
+# All context is the synthetic public/finance/hr demo corpus — no real data.
+# Balanced 6 faithful / 6 unfaithful so κ is not inflated by a skewed prior.
+
+slice:
+  name: faithfulness-calibration
+  version: v1
+
+examples:
+  # ---- FAITHFUL (answer fully grounded in context) ----
+  - id: f1
+    question: "What is the Q3 invoice total?"
+    context: "The total due is 15000 USD, payable within 30 days of the invoice date."
+    answer: "The total due on the Q3 invoice is 15000 USD."
+    human_label: true
+
+  - id: f2
+    question: "Who is the customer on the Q3 invoice?"
+    context: "Billing period: Q3 2026. Customer: Globex Corp. Purchase order PO-44120."
+    answer: "The customer is Globex Corp."
+    human_label: true
+
+  - id: f3
+    question: "How many annual leave days does a Senior get?"
+    context: "| Band | Annual Days | Carryover | | Junior | 20 | 5 | | Senior | 25 | 10 |"
+    answer: "A Senior accrues 25 annual leave days, with up to 10 carried over."
+    human_label: true
+
+  - id: f4
+    question: "Is sick leave separate from annual leave?"
+    context: "Sick leave is separate from annual leave and does not carry over."
+    answer: "Yes, sick leave is separate from annual leave and does not carry over."
+    human_label: true
+
+  - id: f5
+    question: "Does Acme Search send data to third parties?"
+    context: "Acme Search is a fully-local retrieval system. It answers questions grounded in your own documents and never sends data to a third party."
+    answer: "No. Acme Search is fully local and never sends data to a third party."
+    human_label: true
+
+  - id: f6
+    question: "Within how many days must the invoice be paid?"
+    context: "The total due is 15000 USD, payable within 30 days of the invoice date."
+    answer: "The invoice must be paid within 30 days of the invoice date."
+    human_label: true
+
+  # ---- UNFAITHFUL (wrong number, contradiction, or fabrication) ----
+  - id: u1
+    question: "What is the Q3 invoice total?"
+    context: "The total due is 15000 USD, payable within 30 days of the invoice date."
+    answer: "The total due on the Q3 invoice is 25000 USD."
+    human_label: false  # wrong number (context says 15000)
+
+  - id: u2
+    question: "How many annual leave days does a Junior get?"
+    context: "| Band | Annual Days | Carryover | | Junior | 20 | 5 | | Senior | 25 | 10 |"
+    answer: "A Junior receives 30 annual leave days."
+    human_label: false  # wrong number (context says 20)
+
+  - id: u3
+    question: "Does sick leave carry over?"
+    context: "Sick leave is separate from annual leave and does not carry over."
+    answer: "Yes, unused sick leave carries over to the next year."
+    human_label: false  # direct contradiction
+
+  - id: u4
+    question: "Who is the customer on the Q3 invoice?"
+    context: "Billing period: Q3 2026. Customer: Globex Corp. Purchase order PO-44120."
+    answer: "The customer is Initech Inc., a long-standing enterprise client since 2019."
+    human_label: false  # wrong customer + fabricated detail
+
+  - id: u5
+    question: "What payment methods does the invoice accept?"
+    context: "The total due is 15000 USD, payable within 30 days of the invoice date."
+    answer: "The invoice can be paid by credit card, wire transfer, or cryptocurrency."
+    human_label: false  # fabricated — context says nothing about payment methods
+
+  - id: u6
+    question: "Where is Acme Search hosted?"
+    context: "Acme Search is a fully-local retrieval system. It answers questions grounded in your own documents and never sends data to a third party."
+    answer: "Acme Search runs on AWS and stores your documents in an S3 bucket."
+    human_label: false  # contradicts 'fully-local' + fabricates cloud hosting

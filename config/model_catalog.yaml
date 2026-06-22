@@ -1,0 +1,319 @@
+# iw-rag Benchmark Studio — generator model catalog (F-00094).
+#
+# This catalog is the user-facing list of generator models an `eval-operator`
+# can activate on the single 32 GB GPU.  Editing this file (plus
+# config/llama-swap.yaml) is the only thing required to add a new benchmark
+# candidate — no code change.  Catalog-driven model-agnostic configuration is
+# the project's CORE ethos (CLAUDE.md / lld-config §3, §4).
+#
+# **What is NOT here** (deliberate, v1 scope):
+#   * The Infinity embedder + reranker.  Infinity is ALWAYS resident
+#     (~4 GB VRAM) and is therefore described in config/llama-swap.yaml as a
+#     persistent entry — it is never a catalog candidate and is never swapped.
+#   * The guard models (input injection / Granite Guardian 3.3-8B).  They have
+#     their own endpoints in config/models.yaml and are not benchmarked here.
+#
+# The schema (one entry per id) is intentionally roomy enough that future
+# candidates could include a `role: embedder` / `role: rerank` field, even
+# though v1 only fills `role: generation`.  Schema evolution never forces a
+# migration because the catalog is file-backed (no DB).
+#
+# Per-entry fields (validated by the S02 loader):
+#   id              — stable catalog id; passed to POST /models/activate.
+#   served_name     — Hugging Face repo id passed to vLLM as `--model`.
+#   role            — logical role of the model (only "generation" in v1).
+#   quantization    — quantisation scheme (only "awq" in v1; FP8 weights
+#                     underperform ~45 vs ~140 tok/s on Blackwell sm_120,
+#                     R-00118 / R-00123).
+#   expected_vram_gb — VRAM budget figure from R-00123 §5 (7B ~4-5, 14B ~8-10,
+#                     32B ~19-22).  Informational; the real budget is enforced
+#                     by vLLM's `--gpu-memory-utilization`.
+#   max_context     — vLLM `--max-model-len`.
+#   vllm_flags      — vLLM command-line flags.  EVERY entry MUST include the
+#                     Blackwell sm_120 pins from R-00118 / F-00094 design §"Hard
+#                     constraints":
+#                       * `VLLM_ATTENTION_BACKEND=TRITON_ATTN` (env, set in
+#                         config/llama-swap.yaml's `cmd`, but mirrored here for
+#                         catalog self-documentation).
+#                       * `--quantization awq`.
+#                       * `--kv-cache-dtype fp8`.
+#                       * `--cuda-graph-sizes 1,2,4,8,16,32,64` — bounded CUDA-
+#                         graph capture keeps cold-swap latency within
+#                         `healthCheckTimeout: 300` (R-00123 §5 cold-swap
+#                         cost: 7B ~20-35 s, 14B ~45-70 s, 32B ~70-110 s).
+#                       * A per-model `--gpu-memory-utilization` chosen so the
+#                         resident model + Infinity (~4 GB) fit on the 32 GB
+#                         card with KV headroom at 16K context.
+
+models:
+
+  # --- Smallest AWQ — fast baseline, ample VRAM headroom ---
+  # NOTE: Qwen3 has no 7B dense model — the original `Qwen/Qwen3-7B-AWQ` entry
+  # pointed at a non-existent HF repo (404). 8B is the smallest Qwen3 dense AWQ
+  # that actually exists.
+  qwen3-8b-awq:
+    id: qwen3-8b-awq
+    served_name: Qwen/Qwen3-8B-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 6.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.35    # ~11 GB on a 32 GB card; 8B AWQ ~6 GB weights + KV
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # --- Mid-tier — current production generator (R-00103) ---
+  # This is the candidate the operator baselines against; it is what the base
+  # `vllm` service in docker/compose.yaml already loads.
+  qwen3-14b-awq:
+    id: qwen3-14b-awq
+    served_name: Qwen/Qwen3-14B-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 9.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.55    # ~17-18 GB; matches the base `vllm` service
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # --- Largest AWQ — top of the VRAM range (R-00123 §5) ---
+  # 32B AWQ fits with ~6 GB KV headroom at 16K context on the 32 GB card once
+  # Infinity (~4 GB) is subtracted.  Largest 32B AWQ we commit to today; do
+  # not add larger without re-running the R-00123 §5 VRAM-fit math.
+  qwen3-32b-awq:
+    id: qwen3-32b-awq
+    served_name: Qwen/Qwen3-32B-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 21.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.78    # ~25 GB; leaves headroom for Infinity + KV
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # ===========================================================================
+  # Multi-family comparison roster (added 2026-06-20 for the cross-model
+  # benchmark sweep).  Every entry keeps the Blackwell sm_120 pins; the actual
+  # vLLM cmd lives in config/llama-swap.yaml (these blocks drive the catalog
+  # VRAM-budget display + /catalog listing).  Tool-call parser per family:
+  # Qwen* -> hermes, Llama-3.1 -> llama3_json, Mistral -> mistral.
+  # ===========================================================================
+
+  # --- Qwen3 MoE (30B total / ~3B active) — fast big-model candidate ---
+  qwen3-30b-a3b-awq:
+    id: qwen3-30b-a3b-awq
+    served_name: QuixiAI/Qwen3-30B-A3B-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 18.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.72
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # --- Qwen2.5-32B dense — generation contrast vs Qwen3-32B ---
+  qwen25-32b-awq:
+    id: qwen25-32b-awq
+    served_name: Qwen/Qwen2.5-32B-Instruct-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 20.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.78
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # --- Qwen2.5-14B dense — mid-tier contrast vs Qwen3-14B ---
+  qwen25-14b-awq:
+    id: qwen25-14b-awq
+    served_name: Qwen/Qwen2.5-14B-Instruct-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 10.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.55
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # --- Meta Llama 3.1 8B Instruct — cross-family small baseline ---
+  llama31-8b-awq:
+    id: llama31-8b-awq
+    served_name: hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4
+    role: generation
+    quantization: awq
+    expected_vram_gb: 6.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.40
+      - --enable-auto-tool-choice
+      - --tool-call-parser llama3_json
+      - --port 8001
+
+  # --- Hermes-3-Llama-3.1-8B — Hermes-tuned Llama (tool-format reference) ---
+  hermes3-llama31-8b-awq:
+    id: hermes3-llama31-8b-awq
+    served_name: solidrust/Hermes-3-Llama-3.1-8B-AWQ
+    role: generation
+    quantization: awq
+    expected_vram_gb: 6.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.40
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  # --- Mistral Small 24B (RISKY: mistral tokenizer/parser friction) ---
+  mistral-small-24b-awq:
+    id: mistral-small-24b-awq
+    served_name: casperhansen/mistral-small-24b-instruct-2501-awq
+    role: generation
+    quantization: awq
+    expected_vram_gb: 16.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization awq_marlin
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.62
+      - --enable-auto-tool-choice
+      - --tool-call-parser mistral
+      - --port 8001
+
+  # ===========================================================================
+  # Quantization-ladder variants (added 2026-06-20).  Same BASE models as the
+  # awq entries above, but FP8 (8-bit, vLLM online quant from bf16 weights) and
+  # bf16 (full precision) — to isolate the quality/speed/VRAM cost of the
+  # quantization scheme itself.  Compare e.g. qwen3-8b-awq vs -fp8 vs -bf16.
+  # The 30B-A3B MoE is intentionally absent: fp8 (~30 GB) and bf16 (~60 GB)
+  # exceed the 32 GB card once Infinity (~4 GB) is resident — only 4-bit fits.
+  # Qwen3-14B has no bf16 entry for the same reason (28 GB + Infinity = 32 GB,
+  # no KV headroom); fp8 (~14 GB) fits.
+  # ===========================================================================
+
+  qwen3-8b-fp8:
+    id: qwen3-8b-fp8
+    served_name: Qwen/Qwen3-8B
+    role: generation
+    quantization: fp8
+    expected_vram_gb: 9.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization fp8
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.45
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  qwen3-8b-bf16:
+    id: qwen3-8b-bf16
+    served_name: Qwen/Qwen3-8B
+    role: generation
+    quantization: none
+    expected_vram_gb: 17.0
+    max_context: 16384
+    vllm_flags:
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.70
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  qwen3-14b-fp8:
+    id: qwen3-14b-fp8
+    served_name: Qwen/Qwen3-14B-FP8   # pre-quantized: online fp8 from bf16 OOMs (28GB transient load) on the 32GB card
+    role: generation
+    quantization: fp8
+    expected_vram_gb: 16.0
+    max_context: 16384
+    vllm_flags:
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.62
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  hermes3-llama31-8b-fp8:
+    id: hermes3-llama31-8b-fp8
+    served_name: NousResearch/Hermes-3-Llama-3.1-8B
+    role: generation
+    quantization: fp8
+    expected_vram_gb: 9.0
+    max_context: 16384
+    vllm_flags:
+      - --quantization fp8
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.45
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001
+
+  hermes3-llama31-8b-bf16:
+    id: hermes3-llama31-8b-bf16
+    served_name: NousResearch/Hermes-3-Llama-3.1-8B
+    role: generation
+    quantization: none
+    expected_vram_gb: 17.0
+    max_context: 16384
+    vllm_flags:
+      - --kv-cache-dtype fp8
+      - --cuda-graph-sizes 1,2,4,8,16,32,64
+      - --max-model-len 16384
+      - --gpu-memory-utilization 0.70
+      - --enable-auto-tool-choice
+      - --tool-call-parser hermes
+      - --port 8001

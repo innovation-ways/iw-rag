@@ -1,0 +1,11 @@
+# Phase-0 manual query set — one case per disposition the spine MVP must handle.
+# `expect`: grounded (cited answer) | refused (fail-closed, grounded=false).
+# All run as the `finance` principal; the smoke also asserts ACL isolation
+# (no {hr} source ever appears).
+queries:
+  - query: "What was the Q3 invoice total?"
+    expect: grounded
+  - query: "Summarize the invoice line items."
+    expect: grounded
+  - query: "What is the CEO's home address?"
+    expect: refused

@@ -1,0 +1,69 @@
+# Ignore IW AI CORE files
+.claude/
+.opencode/
+.pi/
+ai-dev/
+.iw/
+.iw-orch.json
+.iw-skills-lock.json
+CLAUDE.md
+CLAUDE.local.md
+docs/
+tmp/
+.tmp/
+
+# .v4p backup files
+*~.xml
+
+# Dynamic plugins .dll
+bin/
+
+# Astro / Node build artifacts
+node_modules/
+dist/
+.astro/
+.env
+.env.production
+npm-debug.log*
+.DS_Store
+.vent/
+
+
+# Local Playwright CLI artifacts (live-validation screenshots/snapshots/logs)
+.playwright/
+.playwright-cli/
+
+# IW AI Core orchestration daemon PID file (cross-project; written when the daemon
+# runs from this worktree). Local runtime state, never committed.
+.daemon.pid
+
+# IW AI Core dashboard test/quality run logs (logs/test_runs/<project>/<run>.log)
+logs/
+
+# Allure test results + generated HTML reports (dashboard test runs)
+allure-results*/
+allure-report/
+
+# Stray Docker bind-mount artifact: a compose mount resolved `./docker/postgres/init`
+# while cwd was already `docker/`, creating an empty root-owned `docker/docker/...`
+# tree. The real init dir is `docker/postgres/init`. Ignored so `git stash -u`
+# (pre-merge stash in the orchestrator's worktree_commit.sh) doesn't choke trying
+# to rmdir the root-owned path. (Diagnosed during I-00131 merge recovery.)
+docker/docker/
+
+# Coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+
+# IW OSS — secrets patterns
+*.pem
+*.key
+*.pfx
+*.p12
+
+# IW OSS — language ignores
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/

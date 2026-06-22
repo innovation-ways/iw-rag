@@ -1,0 +1,7 @@
+# Long-doc needle corpus (exp #8). Public/synthetic.
+documents:
+- uri: corpus://longdoc/ops/handbook.md
+  path: ops/handbook.md
+  mime: text/markdown
+  acl_groups:
+  - public

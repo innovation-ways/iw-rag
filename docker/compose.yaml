@@ -1,0 +1,149 @@
+# iw-rag base compose — backing services for the Phase-0 spine + VRAM spike.
+# The full stack (caddy, frontend, api, phoenix) is wired in tasks 0.1/0.5.
+# GPU reservations live in the compose.gpu.yaml overlay; dev extras in
+# compose.dev.yaml. Image tags are pin@install (Q-IMAGE-PINS) — bump and record
+# back into 90-meta/tech-stack-and-versions.md.
+name: iw-rag
+
+services:
+  postgres:
+    image: paradedb/paradedb:latest        # pin@install — ships pgvector + pg_search (Q-IMAGE-PINS)
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-iw_rag}
+      POSTGRES_DB: ${POSTGRES_DB:-iw_rag}
+    volumes:
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql   # PG18+ layout (paradedb:latest moved to per-major subdir)
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iw_rag} -d ${POSTGRES_DB:-iw_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vllm:
+    # v0.11.0 = last cu128 (CUDA 12.8.1) image; v0.11.1+ requires CUDA 12.9.
+    # Host driver 570.172.08 → CUDA 12.8, so v0.11.0 is the newest runnable tag
+    # with Blackwell sm_120 + AWQ-Marlin + FP8 support (R-00118, Q-BLACKWELL).
+    image: vllm/vllm-openai:v0.11.0
+    ipc: host                               # vLLM needs ample shared memory
+    environment:
+      # FlashAttention-3 is broken on Blackwell (R-00118) — use Triton attention.
+      VLLM_ATTENTION_BACKEND: ${VLLM_ATTENTION_BACKEND:-TRITON_ATTN}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+    command: >-
+      --model Qwen/Qwen3-14B-AWQ
+      --quantization awq
+      --kv-cache-dtype fp8
+      --max-model-len 16384
+      --gpu-memory-utilization 0.55
+      --enable-auto-tool-choice
+      --tool-call-parser hermes
+      --port 8001
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 5
+
+  # Embedder + reranker server. CANONICAL choice is TEI (tech-stack §3), but TEI
+  # has NO Blackwell (sm_120) build — every prebuilt TEI image is sm_80/sm_89/
+  # sm_90 and crashes on the RTX 5090 with "compute cap 120 not compatible with
+  # compile time 80" (Task 0.0 finding, 2026-06-06). We therefore use the
+  # design's sanctioned Q-TEI fallback `infinity` (PyTorch-based → torch cu128
+  # has sm_120 kernels). One container serves BOTH BGE-M3 and the reranker;
+  # routes by the `model` field. OpenAI-compatible `/embeddings` + `/rerank`.
+  # On sm_90-and-earlier hosts, TEI remains the canonical server.
+  infinity:
+    image: michaelf34/infinity:latest   # pin@install — CUDA 12.9 base, torch sm_120-capable (Q-TEI fallback)
+    command: >-
+      v2
+      --model-id BAAI/bge-m3
+      --model-id BAAI/bge-reranker-v2-m3
+      --port 7997
+    environment:
+      HF_HUB_CACHE: /data           # reuse the shared hub cache layout
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/data
+    ports:
+      - "7997:7997"
+
+  # --- Trust / observability backend (Phase 1+; CPU-only, no VRAM) ---
+  phoenix:
+    image: arizephoenix/phoenix:latest   # pin@install — OTel/OpenInference backend (ADR-017)
+    ports:
+      - "6006:6006"   # UI
+      # OTLP gRPC (4317) is reached by the api over the internal compose network
+      # (http://phoenix:4317); the host publish is omitted to avoid clashing with
+      # any host-local OTLP collector already bound to 127.0.0.1:4317.
+    volumes:
+      - phoenix:/data
+
+  # --- Delivery (FastAPI). Behind Caddy; not published directly. ---
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    environment:
+      IW_RAG__DATABASE__DSN: >-
+        postgresql+psycopg://${POSTGRES_USER:-iw_rag}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-iw_rag}
+      IW_RAG__MODELS__GENERATOR__ENDPOINT: http://vllm:8001/v1
+      IW_RAG__MODELS__EMBEDDER__ENDPOINT: http://infinity:7997
+      IW_RAG__MODELS__RERANKER__ENDPOINT: http://infinity:7997
+      IW_RAG__API__STATIC_TOKENS: ${IW_RAG__API__STATIC_TOKENS:-{}}
+      IW_RAG__API__OPERATOR_TOKENS: ${IW_RAG__API__OPERATOR_TOKENS:-[]}
+      # Login-capable demo auth for document management (stable per-user identity +
+      # public/user:<id> groups).  When set it supersedes STATIC_TOKENS.  The tokens
+      # MUST match the frontend's IW_RAG_DEMO_USERS so a chat login + the document
+      # manager resolve to the same principal.
+      IW_RAG__API__DEMO_USERS: ${IW_RAG__API__DEMO_USERS:-{}}
+      # Where uploaded document bytes are staged (persisted so the manager can serve
+      # them back and ingestion can read them).
+      IW_RAG__API__UPLOAD_DIR: ${IW_RAG__API__UPLOAD_DIR:-/data/uploads}
+      # Signs short-lived document-download tokens. When set, citation/source
+      # links in the console Chat view become clickable downloads (empty → links
+      # fall back to plain text). Env-only secret (mirror of the DSN convention).
+      IW_RAG__API__DOWNLOAD_TOKEN_SECRET: ${IW_RAG__API__DOWNLOAD_TOKEN_SECRET:-}
+      IW_RAG__MODES__VISUAL__ENABLED: ${IW_RAG__MODES__VISUAL__ENABLED:-false}
+      # Guardrails default ON (fail-closed). Toggle off via .env for a demo that
+      # exercises the core grounded-answer path when the guard models are not served.
+      IW_RAG__GUARDRAILS__ENABLED: ${IW_RAG__GUARDRAILS__ENABLED:-true}
+      IW_RAG__OBSERVABILITY__PHOENIX_ENDPOINT: http://phoenix:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Persist staged upload bytes across container recreates (document manager).
+      - uploads:/data
+    expose:
+      - "8000"
+
+  # --- Frontend: removed. Chat & Upload are native Operator Console views
+  # (src/iw_rag/api/console_embed_page.py), so the FastAPI `api` service is the
+  # single frontend. The Chainlit app under frontend/ is no longer deployed. ---
+
+  # --- Edge (Caddy): one entrypoint. / → /console, /api/* → api, rest → api. ---
+  caddy:
+    image: caddy:2   # pin@install
+    depends_on:
+      - api
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    ports:
+      - "8088:80"
+
+volumes:
+  pgdata: {}
+  hf-cache: {}   # shared model cache — download open weights once
+  phoenix: {}
+  caddy-data: {}
+  uploads: {}    # staged document-manager upload bytes

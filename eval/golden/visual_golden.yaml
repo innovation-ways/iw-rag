@@ -1,0 +1,27 @@
+# Visual golden (exp #7). Each answer is visible ONLY in the page image —
+# absent from all text docs, so the text spine cannot retrieve it.
+dataset:
+  name: visual-golden
+  version: v1
+queries:
+- question: How many units did the Northwind region sell in Q3?
+  page: p1_regional_sales.png
+  answer: '4820'
+- question: What is the power draw of Hall B in the datacenter?
+  page: p2_power_draw.png
+  answer: '1140'
+- question: Which bin holds spare part RX-19?
+  page: p3_spare_bins.png
+  answer: '43'
+- question: What is the Q3 sales figure for the Southport region?
+  page: p1_regional_sales.png
+  answer: '5640'
+- question: Which bin holds spare part PX-117?
+  page: d1_parts.png
+  answer: '42'
+- question: What port does host node-21 listen on?
+  page: d2_servers.png
+  answer: '8021'
+- question: How many units of SKU-214 are on hand?
+  page: d3_stock.png
+  answer: '23'

@@ -1,0 +1,64 @@
+# Demo golden set for headline experiment #1 (retrieval ablation).
+#
+# Relevance is curated by (source_uri, answer_keyword): a chunk is "relevant"
+# for a query when it belongs to `source` AND its content contains `keyword`
+# (case-insensitive). scripts/run_golden_eval.py resolves these to the live
+# `chunks.id` set at run time, so the golden set is reproducible across re-ingest
+# (no hard-coded UUIDs). All content is the synthetic public/finance/hr demo
+# corpus — no real data.
+#
+# NOTE: this is a *tiny* (3-doc, 18-chunk) demo corpus. It exercises the eval
+# harness end-to-end against the live stack and validates the Recall@10>=0.8
+# floor live; it is NOT a benchmark — meaningful dense→hybrid→rerank lift needs a
+# larger, harder corpus (deferred).
+dataset:
+  name: demo-golden
+  version: v1
+queries:
+  - question: "What is the Q3 invoice total?"
+    source: "corpus://finance/invoice_q3.md"
+    keyword: "15000"
+    query_type: factual
+  - question: "Who is the customer on the Q3 invoice?"
+    source: "corpus://finance/invoice_q3.md"
+    keyword: "Globex"
+    query_type: factual
+  - question: "Within how many days must the invoice be paid?"
+    source: "corpus://finance/invoice_q3.md"
+    keyword: "30 days"
+    query_type: factual
+  - question: "How many annual paid leave days does each band receive?"
+    source: "corpus://hr/leave_policy.md"
+    keyword: "Annual Days"
+    query_type: factual
+  - question: "Is sick leave separate from annual leave?"
+    source: "corpus://hr/leave_policy.md"
+    keyword: "Sick leave"
+    query_type: factual
+  - question: "How is paid leave accrued?"
+    source: "corpus://hr/leave_policy.md"
+    keyword: "accrue"
+    query_type: factual
+  - question: "What is Acme Search?"
+    source: "corpus://public/intro.md"
+    keyword: "fully-local"
+    query_type: factual
+    # Optional trajectory-eval label (experiment #9): asserts the router's branch.
+    # Back-compatible — ignored by every other harness. The grounded answer
+    # lives in the corpus, so the loop should retrieve (not skip).
+    expected_route: retrieve
+  - question: "How do I get help or support?"
+    source: "corpus://public/intro.md"
+    keyword: "ticket"
+    query_type: factual
+    expected_route: retrieve
+  # Zero-gold (unanswerable from the corpus): excluded from the retrieval means,
+  # but confirms the harness counts it separately rather than scoring it. For
+  # trajectory eval (experiment #9) it doubles as a fail-closed label: an
+  # off-corpus question should be REFUSED (strict mode), never answered ungrounded.
+  - question: "What is the company revenue forecast for 2030?"
+    source: null
+    keyword: null
+    query_type: factual
+    expected_route: retrieve         # optional (experiment #9): asserts the router's branch
+    expected_disposition: refused    # optional (experiment #9): asserts the terminal state

@@ -1,0 +1,2 @@
+# Extension bootstrap SQL (01_extensions.sql: pgvector + pg_search [+ AGE Phase 4])
+# is added in task 0.1 (WI-002). Placeholder so the bind-mount directory exists.

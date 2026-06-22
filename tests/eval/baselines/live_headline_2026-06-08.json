@@ -1,0 +1,17 @@
+{
+  "_comment": "Frozen live headline numbers (2026-06-08, RTX 5090, demo-scale). The DeepEval/CI regression anchor: re-running an experiment on a machine with the live stack must not regress these. The recall_floor (0.80) is the PRODUCTION gate; the benchmark corpus is a deliberately-hard research eval that lands just below it by design (not gated). Full reports in eval/reports/.",
+  "exp1_retrieval": {
+    "demo_corpus":      {"recall_at_10": 1.000, "ndcg_at_10": 1.000, "mrr": 1.000},
+    "benchmark_corpus": {"docs": 108, "queries": 37, "recall_at_10": 0.779, "ndcg_at_10": 0.788, "mrr": 0.853, "note": "108-doc scaled corpus; recall below the 0.80 production floor by design (was 0.792 on the 26-doc cut)"}
+  },
+  "exp3_faithfulness": {"demo": 1.000, "benchmark": 1.000, "judge": "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct"},
+  "exp4_loop_on_off":  {"grounded_on": "15/21", "grounded_off": "15/21", "note": "agree on this corpus"},
+  "exp5_redteam":      {"garak_corrected_asr": 0.000, "promptfoo_pass": "5/5", "pyrit_outcome": "FAILURE", "acl_leak_rate": 0.000, "injection_catch_rate": 1.000, "fpr": 0.000},
+  "exp6_graphrag":     {"graph_ndcg_at_5_multihop": 0.000, "spine_ndcg_at_5_multihop": 0.347, "gate_passed": false, "note": "route stays off by config"},
+  "exp7_visual":       {"colvision_ndcg_at_5": 1.000, "caption_ndcg_at_5": 1.000, "colvision_wins": false, "note": "tie; text spine ~0 by construction"},
+  "exp8_longcontext":  {"lc_needle_recovered": true, "rag_needle_recovered": false, "rag_needle_in_chunks": true},
+  "kappa_faithfulness": {"cohens_kappa": 1.000, "raw_agreement": "12/12"},
+  "recall_floor": 0.80,
+  "kappa_floor": 0.60,
+  "redteam_asr_ceiling": 0.0
+}

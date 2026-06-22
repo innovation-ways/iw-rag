@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - name: Sync (dev group)
+        run: uv sync --group dev --frozen
+
+      - name: Lint (ruff)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check (mypy --strict)
+        run: uv run mypy --strict src
+
+      - name: Assertion-strength scanner (fails on NEW weak tests)
+        # Static AST scan; bites only on violations NOT in tests/assertion_free_baseline.txt.
+        # The baseline is a cleanup backlog, not an accept-list — do not grow it to silence.
+        run: uv run python scripts/check_test_assertions.py --baseline tests/assertion_free_baseline.txt
+
+      - name: Tests (unit + integration) + coverage floor
+        # Integration tests use testcontainers; the GitHub runner provides Docker,
+        # which pulls the pinned paradedb digest on first run. Live (@pytest.mark.live)
+        # GPU tests stay skipped (no --run-live). The --cov-fail-under floor lives in
+        # [tool.coverage.report] (pyproject.toml) — a ratchet, raised never lowered.
+        run: uv run pytest -q --cov=iw_rag --cov-report=term-missing --cov-report=xml
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+      - run: uv sync --group dev --frozen
+      - run: uv run pre-commit run --all-files

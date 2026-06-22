@@ -1,0 +1,39 @@
+# GraphRAG store overlay — a dedicated Apache-AGE-on-PG18 Postgres for the
+# Phase-4 GraphRAG mode (headline experiment #6). Codifies what was a hand-run
+# `docker run` container (restart=no) into a reproducible, reboot-surviving service.
+#
+# Layer on top of compose.yaml. Driven by `./rag.sh graph up|down|status|psql`.
+#
+#   docker compose --project-directory . \
+#     -f docker/compose.yaml -f docker/compose.graph.yaml up -d graph-pg
+#
+# DATA PRESERVATION: `graphdata` is declared external and pinned to the volume the
+# original hand-run container created, so the codified service adopts the existing
+# AGE graph instead of starting empty. Same image, creds, and host port (5434) →
+# transparent to anything connecting (eval/index scripts via localhost:5434).
+services:
+  graph-pg:
+    image: paradedb/paradedb:latest   # ships AGE-capable PG18 (same image as the main store)
+    container_name: iw-rag-graph-pg
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_USER:-iw_rag}
+      POSTGRES_DB: ${POSTGRES_DB:-iw_rag}
+    volumes:
+      - graphdata:/var/lib/postgresql
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iw_rag} -d ${POSTGRES_DB:-iw_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  graphdata:
+    external: true
+    # The volume the original hand-run iw-rag-graph-pg container created. Preserves
+    # the live AGE graph. To start fresh on a new host, create a named volume and
+    # replace this block with `graphdata: {}`.
+    name: 0dd638c330b6abfab73df4138070b26b4f99dba690295ed6e5a3bfa91837b333

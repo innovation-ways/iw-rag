@@ -1,0 +1,16 @@
+# Guards-on overlay for the api. Points it at the guard sidecars by their
+# Docker-network names — WITHOUT this overlay the endpoints fall back to
+# models.yaml defaults (localhost:8003/8004), unreachable inside the container, so
+# the input guard fails closed and EVERY query is rejected. The Makefile's
+# api-deploy/front-deploy auto-include it via $(wildcard docker/compose.guards.yaml).
+#
+# NOTE: this requires the guard sidecars (`injguard`, `iw-rag-vllm-guard`) to be
+# running. An environment that does NOT serve the guards should remove this file
+# (or set IW_RAG__GUARDRAILS__ENABLED=false) to avoid fail-closed rejections.
+# Tracked in git (2026-06-09) after the original untracked copy was lost.
+services:
+  api:
+    environment:
+      IW_RAG__GUARDRAILS__ENABLED: "true"
+      IW_RAG__MODELS__GUARD_INJECTION__ENDPOINT: http://injguard:8003
+      IW_RAG__MODELS__GUARD_SAFETY__ENDPOINT: http://iw-rag-vllm-guard:8004/v1

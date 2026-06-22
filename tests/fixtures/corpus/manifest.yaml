@@ -1,0 +1,16 @@
+# Demo corpus manifest — the source-system metadata the AclResolver reads.
+# acl_groups are NEVER inferred from content (lld-ingestion §2.3). Paths are
+# relative to this manifest's directory. Public + synthetic; no confidential data.
+documents:
+  - uri: "corpus://public/intro.md"
+    path: public/intro.md
+    mime: text/markdown
+    acl_groups: [public]
+  - uri: "corpus://hr/leave_policy.md"
+    path: hr/leave_policy.md
+    mime: text/markdown
+    acl_groups: [hr]
+  - uri: "corpus://finance/invoice_q3.md"
+    path: finance/invoice_q3.md
+    mime: text/markdown
+    acl_groups: [finance]

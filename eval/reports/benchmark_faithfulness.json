@@ -1,0 +1,99 @@
+{
+  "experiment": "exp3_faithfulness",
+  "judge": "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct",
+  "n": 18,
+  "mean_faithfulness": 1.0,
+  "n_pass": 18,
+  "per_query": [
+    {
+      "question": "What is the total due on invoice INV-2026-0908?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "Which purchase order is on invoice INV-2026-0911?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What is the premium support cost on invoice INV-2026-0903?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "Which invoice references purchase order PO-44127?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What is the root cause of incident INC-2026-002?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What rate limit applies to the /v2/ingest endpoint?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What is the policy code for the expense reimbursement policy?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What is the platform license cost on invoice INV-2026-0906?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "Who is the customer on invoice INV-2026-0905?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What is the total on invoice INV-2026-0910?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "How many paid days off does a principal engineer get each year?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "How much does the company contribute to retirement savings?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "How much can I claim per day when travelling abroad?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What should I do if search is responding slowly?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "How do I reach support?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "How long are audit records kept before deletion?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What are the payment terms for the customer on invoice INV-2026-0902?",
+      "score": 1.0,
+      "passed": true
+    },
+    {
+      "question": "What annual leave does Grace Hopper receive given her band?",
+      "score": 1.0,
+      "passed": true
+    }
+  ]
+}

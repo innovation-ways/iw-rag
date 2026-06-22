@@ -1,0 +1,122 @@
+# iw-rag model registry — Phase-0 logical roles.
+#
+# Modules reference a LOGICAL role (generator, embedder, reranker); swapping
+# the physical model = editing this file + env, never code (lld-config §3,
+# repo-structure §4, the model-agnostic CORE ethos).
+#
+# Endpoint values use ${ENV_VAR} syntax; they are resolved at load time from
+# process env (IW_RAG__MODELS__*__ENDPOINT).  They MUST be set in .env (or
+# process env) before the application starts — missing endpoint → ConfigError.
+#
+# Engine: "infinity" is the Blackwell (RTX 5090 / sm_120) fallback for TEI.
+# TEI has no sm_120 build (Task 0.0 finding, 2026-06-06); infinity
+# (michaelf34/infinity, PyTorch cu128) serves both BGE-M3 and the reranker
+# via OpenAI-compatible /embeddings + /rerank on one container.  On sm_90-and-
+# earlier hosts the engine would be "tei".  The models and dims are unchanged.
+
+models:
+  generator:
+    served_name: "Qwen/Qwen3-14B-AWQ"      # R-00103
+    role: generation
+    engine: vllm
+    endpoint: "${IW_RAG__MODELS__GENERATOR__ENDPOINT}"   # e.g. http://vllm:8001/v1
+    quantization: awq
+    kv_cache_dtype: fp8
+    tool_call_parser: hermes
+
+  embedder:
+    served_name: "BAAI/bge-m3"             # R-00101
+    role: embedding
+    engine: infinity                        # Blackwell fallback: infinity instead of tei
+    endpoint: "${IW_RAG__MODELS__EMBEDDER__ENDPOINT}"    # http://infinity:7997
+    dims: 1024
+    emits:
+      - dense
+      - sparse
+    context_window: 8192
+
+  reranker:
+    served_name: "BAAI/bge-reranker-v2-m3" # R-00100
+    role: rerank
+    engine: infinity                        # same infinity container as embedder
+    endpoint: "${IW_RAG__MODELS__RERANKER__ENDPOINT}"    # http://infinity:7997
+
+  # --- Offline judges (eval-time only; NEVER on the hot path — two-clocks rule) ---
+  # Bring up with: docker compose up -d vllm-judge
+  # Both judges are a DIFFERENT family from the Qwen3-14B generator (Llama-3 /
+  # Llama-3.1) — self-preference de-bias (ADR-013, lld-eval-observability §5).
+  #
+  # Endpoint: both judges share one offline vLLM judge endpoint (VLLM_JUDGE_URL).
+  # Set IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT and
+  # IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT in .env (both point at the same
+  # offline vllm-judge service by default).
+  judge_faithfulness:
+    # Llama-3 family; HaluBench SOTA. Correct HF repo id (ungated) — the earlier
+    # "PatronusAI/Lynx-8B-Instruct" was a non-existent path (404).
+    served_name: "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct"
+    role: judge
+    engine: vllm
+    endpoint: "${IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT:-http://localhost:8002/v1}"
+
+  judge_general:
+    # Llama-3.1 family; rubric grading. Correct HF repo id (ungated) — the earlier
+    # "AtlaAI/Selene-Mini-8B-Instruct" was a non-existent path (404).
+    served_name: "AtlaAI/Selene-1-Mini-Llama-3.1-8B"
+    role: judge
+    engine: vllm
+    endpoint: "${IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT:-http://localhost:8002/v1}"
+
+  # --- Phase 3: Guard models ---
+  #
+  # guard_injection — Llama Prompt Guard 2 (86M multilingual mDeBERTa).
+  # Hot-path cheap (BERT-class, single-digit-ms target); served via TEI/
+  # transformers.  The ${:-default} form lets the API/ingest start without
+  # a live guard endpoint (two-clocks rule); live guard serving is required
+  # when guardrails.enabled=true.
+  guard_injection:
+    served_name: "meta-llama/Llama-Prompt-Guard-2-86M"   # 86M multilingual variant (R-00108 F2)
+    role: guard
+    engine: tei                                           # TEI/transformers classify endpoint
+    endpoint: "${IW_RAG__MODELS__GUARD_INJECTION__ENDPOINT:-http://localhost:8003}"
+
+  # guard_safety — IBM Granite Guardian 3.3-8B.
+  # Shared workhorse for harm/jailbreak (input_guard, Task 3.1) AND groundedness
+  # (output_guard, Task 3.3) — one co-resident vLLM instance, minimising VRAM
+  # (R-00108 F6).  Quantised (AWQ ~5-6 GB) it co-resides on the 32 GB card
+  # alongside the spine + generator (total ~23-27 GB; validated in Task 0.0 spike).
+  # Apache-2.0 licensed.
+  guard_safety:
+    served_name: "ibm-granite/granite-guardian-3.3-8b"   # Apache-2.0; R-00108 F3/F5/F6
+    role: guard
+    engine: vllm                                          # same or a dedicated guard vLLM endpoint
+    endpoint: "${IW_RAG__MODELS__GUARD_SAFETY__ENDPOINT:-http://localhost:8004/v1}"
+    quantization: awq                                     # AWQ ~5-6 GB VRAM
+
+  # --- Phase 4: Visual fallback captioner (OFFLINE / batch only) ---
+  #
+  # visual_caption — Qwen2.5-VL-7B-Instruct on the batch vLLM endpoint.
+  # Used by scripts/index_visual.py at ingest time; NEVER on the /query hot path
+  # (two-clocks rule; lld-multimodal §3).  The ${:-default} form lets the API and
+  # ingest pipeline start without a live captioner endpoint — the captioner is only
+  # required when modes.visual.enabled=true and index_visual.py is run.
+  visual_caption:
+    served_name: "Qwen/Qwen2.5-VL-7B-Instruct"    # Apache-2.0; offline only
+    role: visual_caption
+    engine: vllm
+    endpoint: "${IW_RAG__MODELS__VISUAL_CAPTION__ENDPOINT:-http://localhost:8005/v1}"
+
+  # --- Phase 4: GraphRAG extraction model (OFFLINE / batch only) ---
+  #
+  # graphrag-extract — Qwen3-4B on the batch vLLM endpoint.
+  # Used by scripts/index_graph.py and GraphIndexer at ingest time;
+  # NEVER on the /query hot path (two-clocks rule; lld-graphrag §1).
+  # The batch endpoint is DISTINCT from the hot-path generator endpoint
+  # so extraction never steals serving capacity from Qwen3-14B (R-00106/F2).
+  # The ${:-default} form lets the API and ingest pipeline start without a
+  # live graphrag-extract endpoint — only required when modes.graphrag.enabled=true
+  # and scripts/index_graph.py is run.
+  graphrag-extract:
+    served_name: "Qwen/Qwen3-4B"              # 4B extraction model; OFFLINE only
+    role: graph_extraction
+    engine: vllm
+    endpoint: "${IW_RAG__MODELS__GRAPHRAG_EXTRACT__ENDPOINT:-http://localhost:8006/v1}"

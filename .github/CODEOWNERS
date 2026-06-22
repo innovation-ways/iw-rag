@@ -1,0 +1,12 @@
+# CODEOWNERS
+# Define code ownership for this repository.
+
+# Default rule — requires approval from @innovation-ways/maintainers
+*       @innovation-ways/maintainers
+
+# Documentation
+docs/    @innovation-ways/docs
+*.md     @innovation-ways/docs
+
+# CI/CD
+.github/workflows/ @innovation-ways/ci

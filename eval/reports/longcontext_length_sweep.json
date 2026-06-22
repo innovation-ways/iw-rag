@@ -1,0 +1,32 @@
+{
+  "experiment": "exp8_longcontext_length_sweep",
+  "needle": "mauve-otter-49-banister",
+  "needle_depth_pct": 50,
+  "recovered_count": "4/4",
+  "per_length": [
+    {
+      "n_paragraphs": 60,
+      "context_tokens_est": 9133,
+      "needle_recovered": true,
+      "latency_ms": 4632.7
+    },
+    {
+      "n_paragraphs": 120,
+      "context_tokens_est": 18221,
+      "needle_recovered": true,
+      "latency_ms": 3449.6
+    },
+    {
+      "n_paragraphs": 175,
+      "context_tokens_est": 26554,
+      "needle_recovered": true,
+      "latency_ms": 5130.9
+    },
+    {
+      "n_paragraphs": 205,
+      "context_tokens_est": 31098,
+      "needle_recovered": true,
+      "latency_ms": 5806.2
+    }
+  ]
+}

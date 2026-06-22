@@ -1,0 +1,21 @@
+# iw-rag edge — single entrypoint (ADR-016, CONVENTIONS §14).
+# Chainlit has been removed: Chat and Upload are now native Operator Console
+# views, so there is ONE frontend. Routing:
+#   /          → 302 redirect to /console (no-store so no cache can pin it)
+#   /api/*     → FastAPI (path prefix stripped)
+#   /console*  → FastAPI Operator Console (path preserved)
+#   everything else → FastAPI (the console + its APIs are the whole surface)
+:80 {
+	@root path /
+	route {
+		header @root Cache-Control "no-store"
+		redir @root /console 302
+		handle_path /api/* {
+			reverse_proxy api:8000
+		}
+		handle /console* {
+			reverse_proxy api:8000
+		}
+		reverse_proxy api:8000
+	}
+}

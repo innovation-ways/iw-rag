@@ -1,0 +1,5 @@
+# DCO (Developer Certificate of Origin)
+# https://github.com/apps/dco
+signoff:
+  required: true
+  autoIC: true

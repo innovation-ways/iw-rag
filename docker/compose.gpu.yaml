@@ -1,0 +1,21 @@
+# GPU reservation overlay — applied on top of compose.yaml via the Makefile.
+# Requires the NVIDIA Container Toolkit. All three model services share the
+# single RTX 5090 (sm_120, Blackwell); co-residence is bounded by vLLM's
+# --gpu-memory-utilization cap in compose.yaml and validated by the VRAM spike.
+services:
+  vllm:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+  infinity:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

@@ -1,0 +1,59 @@
+# Experiment #6 golden — GraphRAG (graph route) vs hybrid spine.
+#
+# Two subsets, per the task-4a / ADR-009 gate:
+#   - multi_hop  : the answer doc shares NO lexical/semantic anchor with the
+#                  question (person → band → leave-days lives in TWO docs:
+#                  directory.md names the person+band, leave_policy.md holds the
+#                  days). Single-pass retrieval on the question text lands on
+#                  directory.md (has the name) and misses leave_policy.md (has the
+#                  number) — the case a graph traversal exists for. EXPECT graph WIN.
+#   - procedural : single-doc policy/how-to questions with strong lexical overlap;
+#                  the graph has no edge to add. EXPECT graph NO-LOSS (≤5% regress).
+#
+# Relevance = (source_uri, keyword) against the live (isolated AGE) corpus.
+dataset:
+  name: graphrag-golden
+  version: v1
+principal_groups: [eng, finance, hr, public]
+multi_hop:
+  - question: "How many annual leave days does Ada Lovelace get?"
+    source: "corpus://bench/hr/leave_policy.md"
+    keyword: "30"
+    query_type: multi_hop      # Ada → Principal (directory) → 30 days (leave_policy)
+  - question: "How many paid leave days is Alan Turing entitled to?"
+    source: "corpus://bench/hr/leave_policy.md"
+    keyword: "25"
+    query_type: multi_hop      # Alan → Senior → 25
+  - question: "How many vacation days does Mary Jackson receive?"
+    source: "corpus://bench/hr/leave_policy.md"
+    keyword: "20"
+    query_type: multi_hop      # Mary → Junior → 20
+  - question: "What monthly leave accrual applies to Grace Hopper?"
+    source: "corpus://bench/hr/leave_policy.md"
+    keyword: "2.50"
+    query_type: multi_hop      # Grace → Principal → 2.50
+  - question: "What are the payment terms for the customer on invoice INV-2026-0903?"
+    source: "corpus://bench/finance/vendor_master.md"
+    keyword: "Net 60"
+    query_type: multi_hop      # INV-0903 → Umbrella Inc → Net 60 (vendor master)
+procedural:
+  - question: "How are employee expenses reimbursed?"
+    source: "corpus://bench/finance/expense_policy.md"
+    keyword: "14 business days"
+    query_type: procedural
+  - question: "What should I do if search latency is high?"
+    source: "corpus://bench/eng/runbook.md"
+    keyword: "ef_search"
+    query_type: procedural
+  - question: "How is paid annual leave accrued?"
+    source: "corpus://bench/hr/leave_policy.md"
+    keyword: "accrues each month"
+    query_type: procedural
+  - question: "What is the code of conduct training requirement?"
+    source: "corpus://bench/hr/conduct.md"
+    keyword: "annual conduct training"
+    query_type: procedural
+  - question: "How long are audit logs retained?"
+    source: "corpus://bench/public/privacy.md"
+    keyword: "365 days"
+    query_type: procedural

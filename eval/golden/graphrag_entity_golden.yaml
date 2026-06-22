@@ -1,0 +1,33 @@
+# Experiment #6 — ENTITY-CENTRIC golden (WI-031).
+#
+# Where graphrag_golden.yaml uses multi-hop queries that name only the ANSWER (the
+# bridge entity is unnamed — structurally out of reach for keyword seeds on the hot
+# path), these queries NAME the entity. With WI-031's fuzzy seed→entity resolution the
+# graph route recovers them; before WI-031 (exact-match seeds) it returned empty (0).
+# Both arms over the SAME (isolated AGE) corpus; relevance = (source_uri, keyword).
+dataset:
+  name: graphrag-entity-golden
+  version: v1
+principal_groups: [eng, finance, hr, public]
+multi_hop:  # entity-named lookups (the slot the harness scores as the "graph should win" set)
+  - question: "Tell me about Acme Search."
+    source: "corpus://bench/public/product_intro.md"
+    keyword: "fully-local"
+    query_type: entity
+  - question: "Which invoice lists Globex Corp as the customer with total 26250?"
+    source: "corpus://bench/finance/inv-2026-0908.md"
+    keyword: "Globex"
+    query_type: entity
+  - question: "What invoice is billed to Umbrella Inc for 30000?"
+    source: "corpus://bench/finance/inv-2026-0903.md"
+    keyword: "Umbrella"
+    query_type: entity
+procedural:
+  - question: "How is annual leave accrued?"
+    source: "corpus://bench/hr/leave_policy.md"
+    keyword: "accrues each month"
+    query_type: procedural
+  - question: "What does the expense policy say about reimbursement timing?"
+    source: "corpus://bench/finance/expense_policy.md"
+    keyword: "14 business days"
+    query_type: procedural

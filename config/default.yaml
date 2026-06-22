@@ -1,0 +1,216 @@
+# iw-rag non-secret defaults — these are the "baseline" values merged under
+# .env and process env.  Secrets (database.dsn, model endpoints) MUST come
+# from env only; they are not listed here.  Precedence: this file < .env <
+# process env (lld-config §4).
+
+environment: dev
+
+# Path to the model registry (relative to the project root)
+models_registry_path: config/models.yaml
+
+ingestion:
+  parser_default: docling
+  parser_hard: mineru
+  leaf_tokens: 384
+  parent_strategy: section
+  late_chunking: true
+  contextual_retrieval: false
+  embed_window_tokens: 8192
+  sparse_arm: bm25
+  embed_retries: 3
+  parse_timeout_s: 120
+  concurrency: 2
+  supersede: false
+  # I-00131: online upload path uses CharTokenizer (1 token == 1 char) and a
+  # larger leaf than the offline default.  The online ChunkConfig's
+  # parent_max_tokens is sourced from retrieval.parent_expansion_max_chars so
+  # bounded parents always fit the small-to-big expansion budget.
+  online_chunk_leaf_tokens: 1600
+
+retrieval:
+  candidate_k: 40
+  fused_k: 80
+  top_k: 8
+  fusion_type: rrf
+  rrf_k: 60
+  rrf_weights:
+    - 1.0
+    - 1.0
+  sparse_arm: bm25
+  expansion_mode: parent
+  parent_expansion_max_chars: 4000  # I-00131: char budget per candidate during small-to-big parent expansion
+                                    # (~1000 generator tokens; 8 candidates * 1k + ~2k overhead ≪ 16,384 max_model_len)
+  rerank_on_failure: degrade
+  rerank_max_doc_chars: 2048        # perf: cap each candidate's text before cross-encoder scoring.
+                                    # bge-reranker-v2-m3 judges relevance from the head; sending a whole
+                                    # 50k-token long-doc chunk cost a flat ~30s/query. 2k chars ≈ sub-second.
+  rerank_model: reranker
+  embed_model: embedder
+
+generation:
+  model: generator
+  temperature: 0.1
+  max_tokens: 1024
+  max_model_len: 16384
+  context_headroom_tokens: 2048   # I-CTXOVERFLOW: tokens reserved (on top of max_tokens) for the
+                                  # system prompt + question + chat template + safety margin. Retrieved
+                                  # chunks are token-budgeted into max_model_len - max_tokens - this, so
+                                  # no prompt can overflow the window even with guards-on datamarking.
+  enable_thinking: false
+  cite_required: true
+  prompt_version: v1
+  gen_retries: 2
+  tool_call_parser: hermes
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  auth_mode: static_token
+  request_timeout_s: 60
+  # F-00095 / S02 — provision an ``eval-operator`` principal so the
+  # Benchmark Studio gate (``POST /benchmark/run``, the S02 ACL keystone
+  # for the activation gate is the existing ``activation_group`` on
+  # ``serving``) is reachable live.  The ``eval-operator`` group is
+  # resolved from auth only (``AccessContext.principal_groups`` via the
+  # existing token→groups map in ``iw_rag.api.auth``); without this
+  # entry the gate is permanently 403 for everyone and the feature is
+  # unusable.  Local-only / demo auth — never enable in production.
+  static_tokens:
+    eval-operator-token:
+      - eval-operator
+  # CR-00098 / S02 — signed download-token TTL.
+  # ``download_token_ttl_seconds`` is a non-secret knob (surface here);
+  # ``download_token_secret`` is env-only (NOT set here — see
+  # IW_RAG__API__DOWNLOAD_TOKEN_SECRET).  An unset/blank secret is the
+  # fail-safe: verify rejects every token, mint raises — the feature
+  # is off until the env var is provided.
+  download_token_ttl_seconds: 300
+
+observability:
+  trace_sample_rate: 1.0
+  log_level: INFO
+
+agent:
+  max_retries: 2                  # correction passes before fail-closed (R-00105 F5)
+  recursion_limit: 25             # LangGraph super-step safety net
+  checkpointer: in_memory         # in_memory (dev) | postgres (durable)
+  grader_model: generator         # defaults to generator endpoint (CONVENTIONS §4)
+  router_enabled: true
+  skip_enabled: true
+  router:
+    enabled: true
+    skip_enabled: true
+  grade:
+    min_relevant: 1
+  hitl:
+    enabled: false
+
+guardrails:
+  enabled: true                    # master switch (Phase 3)
+  input:
+    prompt_guard_model: guard_injection  # logical name → models.yaml
+    harm_model: guard_safety             # logical name → models.yaml
+    threshold: 0.5                       # block threshold (score >= 0.5 → block; tuned in Task 3.5)
+  sanitize:
+    injection_scan: true           # per-chunk Prompt Guard 2 scan
+    on_poison: drop                # drop | flag (flag for eval/demo only)
+    every_n_words: 1               # datamarking density (R-00108 F2; tune against Qwen3-14B Task 3.5)
+    pii: true                      # Presidio PII redaction on surviving chunks
+    pii_entity_types: []           # [] → module default (EMAIL_ADDRESS, PHONE_NUMBER, …)
+  output:
+    groundedness_model: guard_safety    # Granite Guardian 3.3-8B; shared with input guard (R-00108 F6)
+    groundedness_threshold: 0.5         # below → ungrounded → fail-closed (tuned in Task 3.5)
+    citation_validation: true           # deterministic; non-disablable in production
+    pii: true                           # Presidio PII redaction on the final answer
+    safety_model: null                  # Llama Guard 4 seam — off by default for VRAM
+  audit:
+    store: postgres                # append-only sink — same Postgres as the data model (lld-guardrails §3.5)
+
+modes:
+  graphrag:
+    enabled: false                  # off until experiment #6 proves the multi-hop win (task-4a)
+    default_mode: mix               # LightRAG mix: graph + vector blended (bounds misroute downside)
+    top_k: 10
+    enable_global: false            # community-summary path off by default (cost)
+    acl_postfilter: true            # always post-filter resolved chunks by ACL (lld-graphrag §6)
+    timeout_s: 20.0
+    index:
+      extraction_model: graphrag-extract  # logical name → models.yaml (Qwen3-4B, batch endpoint)
+      skip_community_summaries: true      # dominant cost driver; skip unless global demo (R-00106/F5)
+      incremental: true                   # only re-extract changed chunks (R-00106/F3)
+      max_gleanings: 1                    # bounded re-prompts per chunk (cost control)
+  visual:
+    enabled: false                  # off until experiment #7 proves the visual win
+    caption:
+      model_role: visual_caption    # logical name in models.yaml
+      max_assets_per_doc: 0         # 0 = unlimited
+      max_tokens: 512
+    late_interaction:               # WI-031 — ColVision two-stage late-interaction path
+      backend: postgres_candidates  # postgres_candidates (default) | qdrant (T1 trigger, ADR-007)
+      pooled_vectors_per_page: 38   # ~38 pooled vectors/page per R-00107/F3 (ADR-010)
+      prefetch_n: 200               # stage-1 candidate budget (HNSW ANN proxy prefetch)
+      top_k: 8                      # final top-k pages returned to the generator
+      model_role: visual_retrieval  # logical ColVision encoder role in models.yaml
+  long_context:                     # WI-032 — gated 4th router branch (native 32K, YaRN off)
+    enabled: false                  # off until experiment #8 proves the whole-doc win (ADR-012)
+    lc_max_input: 24000             # content target (well under 32K native; tuned by exp #8 NoLiMa probe)
+    hard_ceiling: 30000             # absolute limit; native 32K window only (never enable YaRN)
+    enable_yarn: false              # INVARIANT — never enable for this route (R-00109/F3)
+    require_document_level_attribution_only: true  # per-claim attribution → forced to RAG (T4)
+
+# Model-swap serving configuration (F-00094, Benchmark Studio).
+# The catalog is file-backed (config/model_catalog.yaml); the swap
+# authority (which generator is currently resident) lives in llama-swap.
+# health_timeout_s MUST match llama-swap's healthCheckTimeout so the
+# activation gate is coherent (R-00123 §2).  activation_group is the
+# principal group the S03 API checks against AccessContext.principal_groups
+# to allow /models/activate — the group is read from auth ONLY, never
+# from the request body (auth-only ACL keystone).
+serving:
+  catalog_path: config/model_catalog.yaml
+  llama_swap_base_url: http://llama-swap:8080         # internal Compose network only
+  swap_controller_base_url: http://swap-controller:8090  # internal Compose network only
+  health_timeout_s: 300                              # matches llama-swap.yaml healthCheckTimeout
+  activation_group: eval-operator
+
+eval:
+  ci:
+    deepeval_fail_on_regression: true           # false → regression downgrades to warning only
+    faithfulness_regress_tolerance: 0.03        # max absolute faithfulness drop (3 pp; lld §10)
+  benchmark:
+    # Benchmark Studio measurement-core knobs (F-00093, S06)
+    bootstrap_resamples: 10000                  # BCa bootstrap resamples (R-00121 §4)
+    gpu_sampler_interval_s: 0.5                 # GpuSampler background interval (R-00122 §5)
+    vllm_metrics_endpoint: http://localhost:8001/metrics  # local vLLM Prometheus text
+    latency_percentiles: [50, 95, 99]           # percentiles extracted from /metrics
+    min_queries_for_significance: 150           # n<150 → underpowered caveat (R-00121 §4)
+    # F-00095 / S01 — run-orchestration knobs.
+    # ``default_dataset_id`` is the dataset the S01 runner resolves when
+    # the submitted ``model_config`` does not carry one.  ``health_timeout_s``
+    # matches ``Settings.serving.health_timeout_s`` so the runner's wait-
+    # for-ready budget is coherent with llama-swap's ``healthCheckTimeout``
+    # (R-00123 §2).  ``per_query_timeout_s`` is the per-query wall-clock
+    # budget threaded through to the S01 runner's instrumentation.
+    default_dataset_id: benchmark_golden
+    health_timeout_s: 300
+    per_query_timeout_s: 120
+  retrieval:
+    ks: [5, 10]
+    recall_at_10_min: 0.8
+  judges:
+    faithfulness_model: judge_faithfulness   # maps to models.yaml logical name
+    general_model: judge_general             # maps to models.yaml logical name
+    position_swap: true                      # bias control — always double-call
+    rubric_anchored: true                    # pointwise, not free-form
+  guardrails:
+    # Guard-quality and red-team thresholds — owned by ADR-013.
+    # These are defensible starting values; tuned once live red-team runs
+    # (5a Qwen3-14B ASR, promptfoo/garak/PyRIT) are available (Task 3.5).
+    acl_leak_rate_max: 0.0          # structural zero — pre-filter is server-injected
+    attack_catch_rate_min: 0.85     # ≥ 85% of adversarial corpus intercepted
+    groundedness_accuracy_min: 0.80 # Granite Guardian grounded/ungrounded accuracy
+    pii_recall_min: 0.80            # Presidio recall on synthetic PII corpus
+    asr_max: 0.15                   # attack-success-rate ≤ 15% per class
+    fpr_max: 0.10                   # false-positive-rate ≤ 10% on benign queries
+    fail_closed_rate_min: 0.95      # ≥ 95% of bypasses → safe refusal (headline trust)
+    latency_overhead_ms_max: 50.0   # hot guards budget (single-digit + one Granite call)

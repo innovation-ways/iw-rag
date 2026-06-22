@@ -1,0 +1,52 @@
+# Dev-profile overlay. The dev profile adds Ollama as a lightweight generator
+# alternative, and an api hot-reload override. The hot-path embedder/reranker stay
+# on TEI in both profiles (Q-DEV-EMBED). Kept minimal so `docker compose config`
+# validates.
+#
+# api hot-reload (applied via `make api-dev`): the api image BAKES `src/`
+# (COPY src ./src) and runs uvicorn with no reloader, so by default a code change
+# needs `make api-deploy` (rebuild + recreate). This override makes the api pick
+# up edits live:
+#   1. Bind-mounts the host `./src` over the baked `/app/src`. The package is
+#      imported straight from `/app/src/iw_rag` (no site-packages copy), so the
+#      mount shadows the baked tree and host edits are visible immediately —
+#      including the server-rendered console `*_page.py` HTML, which is just
+#      module-level Python strings.
+#   2. Adds `--reload` so uvicorn re-imports on change. No watchfiles dep is
+#      needed: uvicorn falls back to its stat-based reloader (polls `/app/src`
+#      mtimes) — fine for a single-GPU dev box.
+# OPT-IN and non-destructive: `make api-deploy` recreates from the baked image
+# WITHOUT this overlay, restoring production parity (no mount, no reloader).
+# Relative paths resolve against the repo root (every compose call passes
+# `--project-directory .`; see Makefile), so `./src` is the repository source.
+# The api override carries no `profiles:` key so it always applies when this
+# overlay is composed in (the `ollama` service stays gated behind `dev`).
+services:
+  ollama:
+    image: ollama/ollama:latest   # pin@install
+    profiles: ["dev"]
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+
+  api:
+    volumes:
+      - ./src:/app/src
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - iw_rag.api.app:create_app
+      - --factory
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/src
+
+volumes:
+  ollama: {}

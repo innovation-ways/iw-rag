@@ -1,0 +1,20 @@
+{
+  "experiment": "exp8_longcontext_needle",
+  "question": "What is the recovery passphrase for the archive vault?",
+  "needle": "mauve-otter-49-banister",
+  "doc_tokens_est": 21250,
+  "long_context": {
+    "context_tokens_est": 21250,
+    "needle_recovered": true,
+    "latency_ms": 461.1,
+    "answer": "<think>\n\n</think>\n\nThe recovery passphrase for the archive vault is **mauve-otter-49-banister**."
+  },
+  "rag": {
+    "retrieved_chunks": 8,
+    "context_tokens_est": 1301,
+    "needle_in_retrieved_chunks": true,
+    "needle_recovered": false,
+    "latency_ms": 679.6,
+    "answer": "<think>\n\n</think>\n\nThe document does not contain any information regarding the recovery passphrase for the archive vault."
+  }
+}

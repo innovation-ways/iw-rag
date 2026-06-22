@@ -1,0 +1,8 @@
+{
+  "recall_at_10": 0.80,
+  "ndcg_at_10": 1.0,
+  "faithfulness": 1.0,
+  "faithfulness_regress_tolerance": 0.03,
+  "trajectory_validity_rate": 1.0,
+  "route_accuracy": 1.0
+}

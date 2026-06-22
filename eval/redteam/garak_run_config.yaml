@@ -1,0 +1,22 @@
+# garak run config for the iw-rag live red-team sweep (headline experiment #5).
+# Bounds the run so it terminates in a sane wall-clock against the live guarded
+# loop (a benign-but-unanswerable prompt that slips the input guard runs the full
+# retry loop ≈90s; jailbreaks rejected by the input guard return in ≈0.2s).
+#
+# Fully local: garak ships a STATIC probe corpus, so no hosted generation is used
+# (program rule — no cloud API). Point garak at the live FastAPI /api/query via
+# the REST generator config in garak_iw_rag.json.
+#
+# Usage:
+#   garak --target_type rest --config eval/redteam/garak_run_config.yaml \
+#         -G eval/redteam/garak_iw_rag.json \
+#         --probes promptinject.HijackHateHumans,latentinjection.LatentInjectionResume,dan.DanInTheWild \
+#         --report_prefix iw_rag_redteam
+# NOTE: `--target_type rest` is REQUIRED (the -G file only supplies generator
+# *options*; the target *type* must still be named, or garak prints "nothing to do").
+run:
+  generations: 1
+  soft_probe_prompt_cap: 20   # sample at most 20 prompts/probe (keeps the loop-bound runtime sane)
+system:
+  parallel_attempts: 4        # overlap up to 4 API calls to amortise the slow fall-throughs
+  verbose: 0

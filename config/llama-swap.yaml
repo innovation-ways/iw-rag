@@ -1,0 +1,507 @@
+# llama-swap proxy config — Benchmark Studio (F-00094).
+#
+# llama-swap is a single ~15 MB Go OpenAI-compatible reverse proxy
+# (https://github.com/mostlygeek/llama-swap) that fronts vLLM generator
+# containers and cold-swaps the active one per run.  It is the **sole writer**
+# of which generator container is currently resident on the GPU — the
+# swap-controller sidecar (S02) only asks llama-swap to activate a model; it
+# never calls `docker run`/`docker stop` itself.
+#
+# Design source: research R-00123 §2 (config shape) + §6 (compose integration).
+#
+# Layout of this file (R-00123 §2):
+#   * `healthCheckTimeout: 300` — global CUDA-graph capture can exceed the
+#     120 s default on the largest model (32B AWQ ~70-110 s per R-00123 §5).
+#   * `models:` — one entry per generator candidate, mirroring
+#     config/model_catalog.yaml.  Each `cmd` runs a vLLM container via
+#     `docker run --rm --gpus all ...`.  `cmdStop: docker stop <id> || true`
+#     is the boilerplate (idempotent — no-op if the container is already
+#     gone).  `checkEndpoint: /v1/models` is the OpenAI-compatible readiness
+#     probe the S02 swap-controller polls until HTTP 200.
+#   * `groups:` — `swap: true, exclusive: true` over the generator ids.  When
+#     one is activated, llama-swap stops the others before starting the new
+#     one — exactly-one-generator-resident invariant (AC4).
+#
+# Security:
+#   * The `llama-swap` container in docker/compose.benchmark.yaml has the
+#     HOST docker socket bind-mounted; it must therefore NOT be published to
+#     the host network.  llama-swap listens on `:8080` and is reachable only
+#     on the internal `iw-rag` Compose network.  Do not change the `expose`
+#     block to a `ports:` block.
+#   * `VLLM_SERVER_DEV_MODE=1` is the sleep-mode fallback flag and is NOT set
+#     on any entry here — that flag is for the offline sleep-mode fallback
+#     only and must never appear on a network-exposed service
+#     (F-00094 design §"Hard constraints", R-00123 Limitations 1).
+
+# Global readiness timeout (seconds) — see R-00123 §2. Raised from 300 to
+# absorb a first-swap HF weight download for the un-cached 7B/32B AWQ models
+# (warm/cached swaps remain well under the original 300 s).
+healthCheckTimeout: 1200
+
+models:
+  # ---------------------------------------------------------------------------
+  # Persistent (non-exclusive) entry — Infinity embedder + reranker.
+  #
+  # The Infinity container is OWNED by llama-swap here so llama-swap knows
+  # about it, but it lives in NO group (therefore not swap: true) and is
+  # therefore never stopped.  The actual `infinity` service in
+  # docker/compose.yaml continues to define its lifecycle; the
+  # `proxy: http://host.docker.internal:7997` URL points llama-swap at the
+  # host network namespace (Infinity is normally published on
+  # `127.0.0.1:7997` of the iw-rag stack) and `cmdStop` is a no-op so
+  # llama-swap can never kill it.
+  # ---------------------------------------------------------------------------
+  infinity:
+    proxy: http://host.docker.internal:7997
+    cmd: |
+      # No-op: the `infinity` service in docker/compose.yaml is the source
+      # of truth.  llama-swap needs a placeholder command to consider the
+      # entry valid; `true` keeps the container definition but does nothing.
+      true
+    cmdStop: true
+    checkEndpoint: /models
+    ttl: 0
+
+  # ---------------------------------------------------------------------------
+  # Generator candidates (R-00123 §6 — vLLM cmd shape).
+  #
+  # Every cmd sets the Blackwell sm_120 pins:
+  #   * VLLM_ATTENTION_BACKEND=TRITON_ATTN  (FlashAttention-3 is broken on
+  #     Blackwell; R-00118 / F-00094 design §"Blackwell sm_120 pins")
+  #   * vllm/vllm-openai:v0.11.0            (last cu128 / CUDA 12.8.1 image;
+  #     v0.11.1+ requires CUDA 12.9 which the host driver 570.x cannot run)
+  #
+  # `--network iw-rag` puts the generator container on the same Compose
+  # network as the api / swap-controller / llama-swap containers, so the
+  # `--port 8001` is reachable as `vllm-<id>:8001` from llama-swap.  We use
+  # `--name` to make `cmdStop: docker stop <id>` idempotent.
+  # ---------------------------------------------------------------------------
+  qwen3-8b-awq:
+    proxy: http://vllm-qwen3-8b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-8b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen3-8B-AWQ \
+          --served-model-name qwen3-8b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.35 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-8b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  qwen3-14b-awq:
+    proxy: http://vllm-qwen3-14b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-14b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen3-14B-AWQ \
+          --served-model-name qwen3-14b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.55 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-14b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  qwen3-32b-awq:
+    proxy: http://vllm-qwen3-32b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-32b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen3-32B-AWQ \
+          --served-model-name qwen3-32b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.78 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-32b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  # ---------------------------------------------------------------------------
+  # Multi-family comparison roster (added 2026-06-20).  Same Blackwell sm_120
+  # pins + cu128 image as the Qwen3 generators; parser differs per family.
+  # ---------------------------------------------------------------------------
+  qwen3-30b-a3b-awq:
+    proxy: http://vllm-qwen3-30b-a3b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-30b-a3b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model QuixiAI/Qwen3-30B-A3B-AWQ \
+          --served-model-name qwen3-30b-a3b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.72 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-30b-a3b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  qwen25-32b-awq:
+    proxy: http://vllm-qwen25-32b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen25-32b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen2.5-32B-Instruct-AWQ \
+          --served-model-name qwen25-32b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.78 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen25-32b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  qwen25-14b-awq:
+    proxy: http://vllm-qwen25-14b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen25-14b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen2.5-14B-Instruct-AWQ \
+          --served-model-name qwen25-14b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.55 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen25-14b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  llama31-8b-awq:
+    proxy: http://vllm-llama31-8b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-llama31-8b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4 \
+          --served-model-name llama31-8b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.40 \
+          --enable-auto-tool-choice \
+          --tool-call-parser llama3_json \
+          --port 8001
+    cmdStop: docker stop vllm-llama31-8b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  hermes3-llama31-8b-awq:
+    proxy: http://vllm-hermes3-llama31-8b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-hermes3-llama31-8b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model solidrust/Hermes-3-Llama-3.1-8B-AWQ \
+          --served-model-name hermes3-llama31-8b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.40 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-hermes3-llama31-8b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  # RISKY (mistral tokenizer/parser friction; smoke-test before trusting).
+  mistral-small-24b-awq:
+    proxy: http://vllm-mistral-small-24b-awq:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-mistral-small-24b-awq \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model casperhansen/mistral-small-24b-instruct-2501-awq \
+          --served-model-name mistral-small-24b-awq \
+          --quantization awq_marlin \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.62 \
+          --enable-auto-tool-choice \
+          --tool-call-parser mistral \
+          --port 8001
+    cmdStop: docker stop vllm-mistral-small-24b-awq || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  # ---------------------------------------------------------------------------
+  # Quantization-ladder variants (added 2026-06-20): FP8 (vLLM online quant
+  # from bf16 weights) + bf16 (no --quantization flag) of base models we
+  # already have in AWQ.  Same Blackwell pins + hermes parser.
+  # ---------------------------------------------------------------------------
+  qwen3-8b-fp8:
+    proxy: http://vllm-qwen3-8b-fp8:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-8b-fp8 \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen3-8B \
+          --served-model-name qwen3-8b-fp8 \
+          --quantization fp8 \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.45 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-8b-fp8 || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  qwen3-8b-bf16:
+    proxy: http://vllm-qwen3-8b-bf16:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-8b-bf16 \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen3-8B \
+          --served-model-name qwen3-8b-bf16 \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.70 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-8b-bf16 || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  qwen3-14b-fp8:
+    proxy: http://vllm-qwen3-14b-fp8:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-qwen3-14b-fp8 \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model Qwen/Qwen3-14B-FP8 \
+          --served-model-name qwen3-14b-fp8 \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.62 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-qwen3-14b-fp8 || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  hermes3-llama31-8b-fp8:
+    proxy: http://vllm-hermes3-llama31-8b-fp8:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-hermes3-llama31-8b-fp8 \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model NousResearch/Hermes-3-Llama-3.1-8B \
+          --served-model-name hermes3-llama31-8b-fp8 \
+          --quantization fp8 \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.45 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-hermes3-llama31-8b-fp8 || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  hermes3-llama31-8b-bf16:
+    proxy: http://vllm-hermes3-llama31-8b-bf16:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-hermes3-llama31-8b-bf16 \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model NousResearch/Hermes-3-Llama-3.1-8B \
+          --served-model-name hermes3-llama31-8b-bf16 \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 16384 \
+          --gpu-memory-utilization 0.70 \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes \
+          --port 8001
+    cmdStop: docker stop vllm-hermes3-llama31-8b-bf16 || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  # ---------------------------------------------------------------------------
+  # Offline judges — TWO-PHASE swap (guide/08 §"two-phase").
+  #
+  # The Benchmark Studio scoring phase calls the FaithfulnessJudge (Lynx-8B)
+  # and GradingJudge (Selene-Mini) over HTTP at the llama-swap proxy. Because
+  # both are members of the `generators` exclusive group below, the first
+  # judge call STOPS the resident generator and STARTS the judge — so the
+  # generator and the judge never co-reside (which would need ~38 GB on the
+  # 32 GB card). The request `model` the judges send is each model's HF id
+  # (models.yaml `served_name`), so the catalog key + `--served-model-name`
+  # are that exact id. Both judges are the Llama-3 family — a DIFFERENT family
+  # from the Qwen generators (self-preference de-bias, ADR-013). No AWQ (the
+  # upstream judge repos are FP16) and no tool-call parser (judges return a
+  # bare verdict). Same Blackwell sm_120 pins + cu128 image as the generators.
+  # ---------------------------------------------------------------------------
+  "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct":
+    proxy: http://vllm-judge-lynx:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-judge-lynx \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct \
+          --served-model-name PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 8192 \
+          --gpu-memory-utilization 0.55 \
+          --port 8001
+    cmdStop: docker stop vllm-judge-lynx || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+  "AtlaAI/Selene-1-Mini-Llama-3.1-8B":
+    proxy: http://vllm-judge-selene:8001
+    cmd: |
+      docker run --rm --gpus all \
+        --network iw-rag_default \
+        --name vllm-judge-selene \
+        --shm-size=2g \
+        -e VLLM_ATTENTION_BACKEND=TRITON_ATTN \
+        -v iw-rag_hf-cache:/root/.cache/huggingface \
+        vllm/vllm-openai:v0.11.0 \
+          --model AtlaAI/Selene-1-Mini-Llama-3.1-8B \
+          --served-model-name AtlaAI/Selene-1-Mini-Llama-3.1-8B \
+          --kv-cache-dtype fp8 \
+          --cuda-graph-sizes 1 2 4 8 16 32 64 \
+          --max-model-len 8192 \
+          --gpu-memory-utilization 0.55 \
+          --port 8001
+    cmdStop: docker stop vllm-judge-selene || true
+    checkEndpoint: /v1/models
+    ttl: 0
+
+groups:
+  # The exclusive generator group.  swap: true makes the activation an atomic
+  # stop-then-start within the group; exclusive: true enforces the AC4
+  # exactly-one-generator-resident invariant by stopping any sibling that is
+  # already resident before the new one is brought up.  Infinity is
+  # deliberately NOT in this group (and not in any group) so it can never be
+  # stopped by a swap.
+  generators:
+    swap: true
+    exclusive: true
+    members:
+      - qwen3-8b-awq
+      - qwen3-14b-awq
+      - qwen3-32b-awq
+      - qwen3-30b-a3b-awq
+      - qwen25-32b-awq
+      - qwen25-14b-awq
+      - llama31-8b-awq
+      - hermes3-llama31-8b-awq
+      - mistral-small-24b-awq
+      - qwen3-8b-fp8
+      - qwen3-8b-bf16
+      - qwen3-14b-fp8
+      - hermes3-llama31-8b-fp8
+      - hermes3-llama31-8b-bf16
+      # The judges share the exclusive group so a judge call in the scoring
+      # phase swaps the generator out and the judge in (two-phase, single-GPU).
+      - "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct"
+      - "AtlaAI/Selene-1-Mini-Llama-3.1-8B"

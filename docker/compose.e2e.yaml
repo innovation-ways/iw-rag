@@ -1,0 +1,160 @@
+# docker/compose.e2e.yaml — per-worktree isolated stack for browser_verification.
+#
+# Brought up by scripts/e2e_up.sh (env_up_command in .iw-orch.json) on ports the
+# daemon (orch.daemon.browser_env) allocates per (project, item):
+#   COMPOSE_PROJECT_NAME  — isolates containers/network/volumes
+#   E2E_FRONTEND_PORT     — host port for the Caddy edge (= IW_BROWSER_BASE_URL)
+#   E2E_API_PORT          — host port for the FastAPI api (direct, debugging)
+#   E2E_DB_PORT           — host port for the isolated Postgres
+#   IW_ITEM_ID            — work item id (selects ai-dev/active/<ID>/e2e_fixtures)
+#
+# Topology mirrors prod (ADR-016): Caddy is the single entrypoint —
+#   / → Chainlit chat frontend ;  /api/* → FastAPI (prefix stripped).
+# No GPU: the three model backends (generator/embedder/reranker) are faked by
+# the `e2e-models` stub, and guardrails are disabled. Ports bind 127.0.0.1 only.
+name: ${COMPOSE_PROJECT_NAME:-iw-rag-e2e}
+
+services:
+  # --- Isolated Postgres (ParadeDB = pgvector + pg_search for the BM25 arm) ---
+  e2e-db:
+    image: paradedb/paradedb:latest
+    restart: "no"
+    environment:
+      POSTGRES_DB: iw_e2e
+      POSTGRES_USER: iw_e2e
+      POSTGRES_PASSWORD: iw_e2e_dev
+    volumes:
+      # AGE bootstrap (migration 0005) + any other init the prod DB uses.
+      - ../docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${E2E_DB_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iw_e2e -d iw_e2e"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # --- GPU-free model stub: generator (OpenAI) + embedder/reranker (infinity) ---
+  e2e-models:
+    build:
+      context: ..
+      dockerfile: docker/api.e2e.Dockerfile
+    restart: "no"
+    command: ["uv", "run", "--no-dev", "python", "scripts/e2e_model_stub.py"]
+    environment:
+      E2E_MODEL_STUB_PORT: "9000"
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # --- FastAPI api (built from worktree); migrates + seeds the isolated DB ---
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.e2e.Dockerfile
+    restart: "no"
+    depends_on:
+      e2e-db:
+        condition: service_healthy
+      e2e-models:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${E2E_API_PORT}:8000"
+    volumes:
+      # Bind the worktree's ai-dev/ so e2e_fixtures written by a qv-browser
+      # agent AFTER image build are visible to scripts/e2e_seed.py. Read-only.
+      - ../ai-dev:/app/ai-dev:ro
+    environment:
+      IW_E2E_SEED: "1"
+      IW_ITEM_ID: ${IW_ITEM_ID:-}
+      IW_RAG__DATABASE__DSN: postgresql+psycopg://iw_e2e:iw_e2e_dev@e2e-db:5432/iw_e2e
+      # Model backends → the GPU-free stub (generator wants the /v1 base).
+      IW_RAG__MODELS__GENERATOR__ENDPOINT: http://e2e-models:9000/v1
+      IW_RAG__MODELS__EMBEDDER__ENDPOINT: http://e2e-models:9000
+      IW_RAG__MODELS__RERANKER__ENDPOINT: http://e2e-models:9000
+      # Swap-controller catalog (F-00096 Benchmark Runner / V3) → the same
+      # GPU-free stub, which serves /catalog{,/status,/activate}. No real
+      # swap-controller exists in the e2e stack.
+      IW_RAG__SERVING__SWAP_CONTROLLER_BASE_URL: http://e2e-models:9000
+      # Guards off → the query path never calls the guard endpoints. Grounding
+      # still runs (ISSUP/ISUSE on the generator stub).
+      IW_RAG__GUARDRAILS__ENABLED: "false"
+      IW_RAG__MODES__VISUAL__ENABLED: "false"
+      # Login-capable demo auth (matches the frontend's IW_RAG_DEMO_USERS so a
+      # chat login and the api resolve to the same principal). analyst is an
+      # eval-operator + operator so every gated UI is exercisable.
+      IW_RAG__API__DEMO_USERS: '{"analyst":{"password":"analyst","token":"demo-finance","groups":["finance","eval-operator"],"operator":true}}'
+      IW_RAG__API__UPLOAD_DIR: /data/uploads
+      # Enable the signed citation-download feature (CR-00098). The secret is
+      # env-only and defaults to "" (fail-safe off → empty download_url, plain
+      # source text); set a fixed non-secret value so download tokens mint +
+      # verify within this container and the download flow is browser-verifiable.
+      IW_RAG__API__DOWNLOAD_TOKEN_SECRET: e2e-download-token-secret
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+
+  # --- Chainlit chat frontend (pure api client) ---
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      IW_RAG_API_BASE: http://api:8000
+      IW_RAG_DEMO_USERS: '{"analyst":{"password":"analyst","token":"demo-finance"}}'
+      CHAINLIT_AUTH_SECRET: e2e-chainlit-secret
+    expose:
+      - "8501"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; socket.create_connection((\"localhost\",8501),2).close()'"]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+
+  # --- Caddy edge: single entrypoint (= IW_BROWSER_BASE_URL). Reuses the prod
+  #     Caddyfile: / → frontend, /api/* → api (prefix stripped). ---
+  caddy:
+    image: caddy:2-alpine
+    restart: "no"
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ../docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:${E2E_FRONTEND_PORT}:80"
+
+  # --- e2e-dashboard: idle sidecar that exists ONLY so the daemon's per-item
+  #     fixture applier (orch.daemon.browser_env._apply_per_item_fixtures,
+  #     hardcoded service name "e2e-dashboard") can `docker compose exec` into a
+  #     container that has the worktree source + e2e DB env, and run
+  #     scripts/e2e_apply_item_fixtures.py <item>. Reuses the api image; never
+  #     migrates/seeds itself (command overrides the entrypoint → it just idles).
+  #     The api entrypoint already applies the same fixtures at startup; this
+  #     path makes the daemon's redundant re-apply succeed (fixtures idempotent). ---
+  e2e-dashboard:
+    build:
+      context: ..
+      dockerfile: docker/api.e2e.Dockerfile
+    restart: "no"
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ../ai-dev:/app/ai-dev:ro
+    environment:
+      IW_ITEM_ID: ${IW_ITEM_ID:-}
+      IW_RAG__DATABASE__DSN: postgresql+psycopg://iw_e2e:iw_e2e_dev@e2e-db:5432/iw_e2e
+    command: ["sleep", "infinity"]

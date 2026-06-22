@@ -1,0 +1,9 @@
+{
+  "experiment": "judge_human_kappa_faithfulness",
+  "judge": "PatronusAI/Llama-3-Patronus-Lynx-8B-Instruct",
+  "slice": "eval/calibration/faithfulness_slice.yaml (v1, 6 faithful / 6 unfaithful)",
+  "n": 12,
+  "raw_agreement": "12/12",
+  "cohens_kappa": 1.000,
+  "note": "Labels reviewed and confirmed (each example unambiguous by construction). kappa=1.0 on this clean balanced slice; a harder/ambiguous slice would be more discriminating."
+}

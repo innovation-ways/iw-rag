@@ -1,0 +1,248 @@
+[project]
+name = "iw-rag"
+version = "0.0.0"
+description = "Fully-local, single-GPU, open-weight agentic RAG with citations, ACL, and a verification layer."
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2",
+  "pydantic-settings>=2",
+  "httpx>=0.27",                 # async model clients + FastAPI TestClient
+  "structlog>=24",
+  "sqlalchemy[asyncio]>=2",
+  "psycopg[binary]>=3",
+  "alembic>=1.13",
+  "pgvector>=0.3",
+  "pyyaml>=6",
+  "fastapi>=0.115",              # delivery layer (/query, /health, /ingest)
+  "uvicorn>=0.30",              # ASGI server (run target)
+  "langgraph>=0.3",              # agentic loop orchestration (Phase 2)
+  "langgraph-checkpoint-postgres>=3.1.0",
+  "python-multipart>=0.0.9",     # FastAPI multipart form/file uploads (document management)
+  "numpy",                       # paired-stats vectors (F-00093 stats module)
+  "scipy",                       # scipy.stats for A/B compare — on the api hot path via GET /benchmark/compare (F-00095 Studio)
+  "prometheus_client",           # perf.py vLLM /metrics scraper — runs in the api on POST /benchmark/run (F-00093 S05)
+]
+
+[dependency-groups]              # uv dependency groups (dev tooling)
+dev = [
+  "ruff",
+  "mypy",
+  "pytest",
+  "pytest-asyncio",
+  "pytest-cov",                   # coverage floor gate (make cov + CI; not in addopts)
+  "hypothesis",                   # property-based tests for pure-logic invariants
+  "testcontainers[postgres]",
+  "pre-commit",
+  "types-PyYAML",
+  "allure-pytest>=2.15.3",       # Allure results for dashboard test runs (--alluredir)
+]
+spike = [                        # heavy GPU deps isolated from the lib install
+  "vllm",
+  "openai",
+  "nvidia-ml-py",                # → pynvml for true-device VRAM readout
+]
+eval-judges = [                  # offline judge + Ragas eval (never on hot path)
+  "ragas>=0.2",
+  "datasets>=2",
+  "langchain>=0.2",
+  "langchain-core>=0.2",
+  # ragas (<=0.4.3) unconditionally imports `langchain_community.chat_models.vertexai`,
+  # which langchain-community 0.4.x removed in its "sunset" prune — so `import ragas`
+  # raises ModuleNotFoundError and the whole ragas eval surface silently skips. Cap
+  # below 0.4 to keep ragas importable. langchain is only used via ragas here (never on
+  # the hot path; src/ imports no langchain), so this constraint has no other consumer.
+  "langchain-community<0.4",
+  "deepeval>=1.0",               # CI regression gate (task-1.4); lazily imported in tests
+  "nvidia-ml-py",                # pynvml for VRAM readout (F-00093 S05 perf collectors; lazily imported)
+]
+eval-ragas = [                   # LEAN Ragas runtime baked into the api image so POST /benchmark/run
+  "ragas>=0.2",                  # can score context_precision/recall + factual_correctness + noise.
+  "datasets>=2",                 # Subset of eval-judges WITHOUT deepeval (CI-only) — keeps the
+  "langchain>=0.2",              # serving image as small as possible. langchain-community<0.4 pin
+  "langchain-core>=0.2",         # mirrors eval-judges (ragas vertexai import; see that group).
+  "langchain-community<0.4",
+  "langchain-openai>=0.2",       # ChatOpenAI/OpenAIEmbeddings wrappers (benchmark_composition wiring)
+]
+observability = [                # OTel/OpenInference export (tracing degrades to no-op without it)
+  "opentelemetry-sdk",
+  "opentelemetry-exporter-otlp-proto-grpc",
+]
+pdf = [                          # Benchmark "Generate Report" → branded PDF via headless Chromium.
+  "playwright>=1.40",            # The browser binary is installed separately (playwright install chromium)
+]                                # in the api image; lazily used by the /benchmark/reports/{id}/pdf route.
+gpu-telemetry = [                # pynvml for the benchmark GpuSampler — synced into the api image so
+  "nvidia-ml-py",                # POST /benchmark/run can read true-device VRAM/util (F-00093 S05).
+]                                # Tiny pure-python ctypes wrapper; needs the api container to have a
+                                 # GPU reservation (benchmark overlay) for libnvidia-ml.so to be injected.
+ingest = [                       # heavy OFFLINE ingestion deps (parser + local BGE-M3)
+  "docling",                     # PDF/DOCX parser (TextParser handles md/txt with no deps)
+  "transformers",                # BGE-M3 tokenizer + AutoModel for true Late Chunking
+  "torch",                       # on Blackwell sm_120 use the cu128 build for GPU; CPU works for the demo
+  "sentence-transformers",
+]
+docman = [                       # ONLINE upload path (API container) — light, CPU-only
+  "pypdf>=4",                    # born-digital PDF text extraction (no Docling/torch)
+  "Pillow>=10",                  # image decoding for OCR
+  "pytesseract>=0.3.10",         # in-image / scanned-doc OCR (needs the tesseract binary)
+  # OPTIONAL at runtime (not pinned): pdf2image + poppler-utils enable per-page
+  # OCR of scanned PDFs; born-digital extraction works without them.
+]
+guardrails = [                   # Phase-3 guardrails (CPU-only Presidio — no GPU contention)
+  "presidio-analyzer",           # NLP-based PII detection (spaCy + regex recognisers)
+  "presidio-anonymizer",         # PII redaction/anonymization
+  # NOTE: a spaCy model (e.g. en_core_web_lg) is required at runtime:
+  #   python -m spacy download en_core_web_lg
+  # Tests MUST NOT require the model — they mock the analyzer/anonymizer.
+]
+graphrag = [                     # Phase-4 GraphRAG (offline indexer + AGE; MIT licensed)
+  # lightrag-hku: LightRAG (MIT) — provides extraction prompts, openCypher query helpers,
+  # and the optional community-summary pipeline.  Lazily imported (mirror ragas_runner.py)
+  # so plain pytest / mypy --strict src never require it.  Only import where genuinely
+  # needed at indexing/query time.  The extraction model client (VllmClient) + the
+  # tolerant parser are used directly; LightRAG's query engine is a WI-029 concern.
+  "lightrag-hku",
+]
+
+[tool.uv]
+# Security floors for transitive dependencies flagged by the OSS compliance
+# scan (OSS-DEP-04). These are not direct deps — they are pulled in by
+# langchain-core (langsmith), fastapi (starlette), and others (cryptography).
+# Bump as advisories are resolved.
+constraint-dependencies = [
+  "cryptography>=48.0.1",  # GHSA-537c-gmf6-5ccf
+  "langsmith>=0.8.18",     # GHSA-f4xh-w4cj-qxq8
+  "starlette>=1.3.1",      # GHSA-82w8-qh3p-5jfq
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iw_rag"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/iw_rag"]
+
+[[tool.mypy.overrides]]
+# Lazily-imported heavy deps (in the `ingest` group) + untyped libs.
+module = [
+  "pgvector.*",
+  "docling.*",
+  "transformers.*",
+  "torch.*",
+  "sentence_transformers.*",
+  "opentelemetry.*",
+  "openinference.*",
+  # docman group (online upload path) — lazily imported; stubs may be absent.
+  "pypdf.*",
+  "pytesseract.*",
+  "PIL.*",
+  "pdf2image.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Optional eval-judges group — ragas/datasets/langchain are not installed in the
+# dev venv; lazy-imported in ragas_runner.py at call time (never on the hot path).
+module = [
+  "ragas.*",
+  "datasets.*",
+  "langchain.*",
+  "langchain_core.*",
+  "langchain_openai.*",
+  "qdrant_client.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# LangGraph + langgraph checkpointers — installed as a runtime dependency but
+# typed stubs may not be fully complete; this override prevents strict-mypy
+# import errors for the langgraph packages.
+module = [
+  "langgraph.*",
+  "psycopg_pool.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Presidio (guardrails group) is lazily imported at call time inside sanitize.py
+# (mirrors the ragas_runner pattern).  The guardrails dep group is optional in CI
+# and tests mock it; mypy must not fail on missing stubs.
+# spaCy is a transitive Presidio dependency (en_core_web_lg model, CPU-only).
+module = [
+  "presidio_analyzer.*",
+  "presidio_anonymizer.*",
+  "spacy.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# DeepEval (eval-judges group) is lazily imported inside eval test functions
+# (mirrors the ragas_runner pattern).  Not installed in the dev venv; mypy
+# must not fail on missing stubs.
+module = [
+  "deepeval.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# LightRAG (graphrag group) is lazily imported in the graphrag indexer/retriever
+# (mirrors the ragas_runner pattern).  Not installed in the dev venv; mypy
+# must not fail on missing stubs.  The graphrag dependency group is optional
+# in CI; tests mock the extraction client.
+module = [
+  "lightrag.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# perf.py (F-00093 S05) lazy-imports these — the sampler is a graceful no-op
+# when they are missing (no GPU, no Prometheus parser on this host).  Tests
+# run inside the `dev` group where prometheus_client is installed and mock
+# pynvml directly; mypy must not fail on missing stubs for the optional
+# eval-judges extras (nvidia-ml-py exposes the `pynvml` import name; scipy
+# is used by S07's stats module).
+module = [
+  "prometheus_client.*",
+  "pynvml",
+  "scipy.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# --strict-markers: an unregistered marker (e.g. a typo'd @pytest.mark.lvie) is a
+# collection ERROR, not a silent no-op. This protects the local-only / no-cloud
+# invariant — a mistyped @pytest.mark.live can no longer slip a live test into CI.
+addopts = "--strict-markers"
+markers = [
+  "integration: needs testcontainers Postgres",
+  "live: needs real vLLM/TEI endpoints (opt-in, gated by --run-live)",
+  "owasp_llm: OWASP LLM Top-10 security test (task-3.5 / security-red-team-playbook)",
+  "nist_ai_measure: NIST AI RMF MEASURE governance test (task-3.5)",
+  "mitre_atlas: MITRE ATLAS adversarial ML test (task-3.5)",
+  "properties: Hypothesis property-based tests (pure-logic invariants)",
+]
+
+# Coverage floor — a ratchet, raised over time, NEVER lowered. Enforced in CI and
+# `make cov` (NOT in addopts, so subset runs during development stay fast and don't
+# trip the floor). Measured 90.94% across the full suite on 2026-06-13.
+[tool.coverage.run]
+source = ["iw_rag"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true

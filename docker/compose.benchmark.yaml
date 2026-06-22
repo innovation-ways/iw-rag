@@ -1,0 +1,205 @@
+# Benchmark Studio overlay — adds the llama-swap proxy and the
+# swap-controller sidecar (F-00094).  This file is **only** applied on top
+# of docker/compose.yaml (+ docker/compose.gpu.yaml) for the benchmark
+# workflow; it NEVER replaces the base stack.  The base compose stack and the
+# canonical `vllm`, `infinity`, and `api` services stay as-is — the
+# benchmark overlay simply adds two new internal-only services and a GPU
+# reservation for the generators the llama-swap proxy will launch.
+#
+# Operator command (recorded in the step report):
+#   docker compose --project-directory . \
+#     -f docker/compose.yaml \
+#     -f docker/compose.gpu.yaml \
+#     -f docker/compose.benchmark.yaml \
+#     up -d
+#
+# Hard constraints (F-00094 design §"Hard constraints" + R-00123 Limitations):
+#   * `llama-swap:8080` is NOT published to the host (security: the container
+#     holds the host docker socket and would give host-Docker-API access to
+#     anyone who reaches it).
+#   * `swap-controller:8090` is NOT published to the host (internal-only
+#     sidecar; the main API's GET /models + POST /models/activate are the
+#     authenticated public surface and proxy over HTTP to the sidecar).
+#   * `VLLM_SERVER_DEV_MODE=1` is NEVER set here (sleep-mode fallback only).
+
+name: iw-rag
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # api (FastAPI delivery) — F-00094 S03.
+  # Override the generator endpoint so the agent graph's generator URL is the
+  # llama-swap proxy (http://llama-swap:8080/v1) rather than the direct
+  # vLLM container (http://vllm:8001/v1).  AC5: the URL is swap-agnostic —
+  # it never changes across swaps; llama-swap's exclusive group guarantees
+  # exactly one generator is resident at a time, so whichever model the
+  # proxy currently serves IS the active model.  No per-swap URL mutation
+  # in application code.
+  # The base api service definition is reused (build context + image);
+  # only the generator endpoint env is overridden.  Sidecar:
+  # swap-controller_base_url is set so /models/activate proxies correctly.
+  # ---------------------------------------------------------------------------
+  api:
+    # Benchmark-only GPU reservation so the perf GpuSampler's pynvml can read
+    # true-device VRAM/util (F-00093 S05). The nvidia runtime injects
+    # libnvidia-ml.so + /dev/nvidia* into the container; the api allocates NO
+    # VRAM (read-only NVML) so it co-resides with vllm/llama-swap on the single
+    # card. NOT in the base compose — the serving-mode api stays CPU-only and
+    # the sampler degrades to available=false there.
+    #
+    # OPERATIONAL GOTCHA — "Failed to initialize NVML: Unknown Error":
+    # a `systemctl daemon-reload` (or any cgroup refresh) while this container
+    # runs can REVOKE its GPU device-cgroup access mid-life. The devices + libs
+    # stay present but nvmlInit() then fails, so GpuSampler silently degrades to
+    # available=false and reports lose their GPU & memory section (the run still
+    # persists everything else). The reservation below is correct; the fix is to
+    # recreate the cgroup: `docker restart iw-rag-api-1` (verify with
+    # `docker exec iw-rag-api-1 nvidia-smi -L`). Avoid `daemon-reload` while the
+    # benchmark stack is up.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      IW_RAG__MODELS__GENERATOR__ENDPOINT: ${IW_RAG__MODELS__GENERATOR__ENDPOINT_BENCHMARK:-http://llama-swap:8080/v1}  # F-00094 AC5: proxy, not direct vLLM
+      # Judge endpoints point at the SAME llama-swap proxy as the generator.
+      # The judges (Lynx-8B faithfulness, Selene-Mini grading) are members of
+      # llama-swap's exclusive group (config/llama-swap.yaml), so the first
+      # judge call in the scoring phase swaps the generator OUT and the judge
+      # IN — the documented single-GPU TWO-PHASE judging (guide/08 §two-phase)
+      # that dodges the ~38 GB generator+judge co-residence. Without this the
+      # judges defaulted to localhost:8002 (no such service in benchmark mode),
+      # so every verdict failed and the Answer-quality tier was empty.
+      IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT: ${IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT:-http://llama-swap:8080/v1}
+      IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT: ${IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT:-http://llama-swap:8080/v1}
+      IW_RAG__SERVING__SWAP_CONTROLLER_BASE_URL: ${IW_RAG__SERVING__SWAP_CONTROLLER_BASE_URL:-http://swap-controller:8090}  # F-00094 S03: catalog proxy
+      # The activation group is the same default (``eval-operator``) but
+      # overrideable per-deployment via the env var; we pass it through so
+      # operators can flip the gate name without a code change.
+      IW_RAG__SERVING__ACTIVATION_GROUP: ${IW_RAG__SERVING__ACTIVATION_GROUP:-eval-operator}
+      # Benchmark mode runs guards OFF: the guard models (vllm-guard, injguard)
+      # are stopped to free VRAM for the largest (32B) generator swaps, so the
+      # query pipeline must not call them. Overrideable for guards-on benchmarks
+      # of small models only.
+      IW_RAG__GUARDRAILS__ENABLED: ${IW_RAG__GUARDRAILS__ENABLED:-false}
+      # Provision an eval-operator principal so the Benchmark Studio run gate is
+      # reachable. The live .env demo users (analyst/hr) carry no eval-operator
+      # group, so without this every run + activation is 403. Mirrors
+      # docker/compose.e2e.yaml. Local/eval ONLY — never enable in production.
+      # `analyst` also carries the corpus ACL groups (finance/hr) so retrieval
+      # can see the golden-set gold chunks (public is auto-appended).
+      IW_RAG__API__DEMO_USERS: '{"analyst":{"password":"analyst","token":"demo-finance","groups":["finance","hr","eval-operator"],"operator":true},"hr":{"password":"hr","token":"demo-hr","groups":["hr"],"operator":false}}'
+      IW_RAG__API__STATIC_TOKENS: '{"demo-finance":["finance","hr","eval-operator"],"demo-hr":["hr","public"]}'
+
+
+  # ---------------------------------------------------------------------------
+  # llama-swap — the OpenAI-compatible reverse proxy that owns the
+  # generator lifecycle (R-00123 §2 / §6).  Listens on :8080 inside the iw-rag
+  # Compose network; the main API's agent graph points its generator endpoint
+  # at this URL so the generator URL is swap-agnostic (AC5).
+  # ---------------------------------------------------------------------------
+  llama-swap:
+    # Built from docker/llama-swap.Dockerfile = the upstream proxy + a static
+    # `docker` CLI (the upstream image ships only the proxy; the generator
+    # activation cmd in config/llama-swap.yaml needs a docker client to spawn
+    # vLLM candidates over the mounted socket). Pin/bump the proxy tag + CLI
+    # version there and record in 90-meta/tech-stack-and-versions.md.
+    build:
+      context: .
+      dockerfile: docker/llama-swap.Dockerfile
+    image: iw-rag-llama-swap
+    # llama-swap's own `docker run`/`docker stop` calls go through the host
+    # docker socket.  This is the deployed-runtime behaviour described in
+    # config/llama-swap.yaml; the agent never executes these commands.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config/llama-swap.yaml:/app/config.yaml:ro
+    # Joins the Compose default network (iw-rag_default) alongside api /
+    # swap-controller / infinity, and the generator containers it `docker run`s
+    # join the same network (config/llama-swap.yaml `--network iw-rag_default`)
+    # so the proxy reaches them by container name (vllm-<id>:8001).
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # swap-controller — thin FastAPI sidecar (S02).  Loads config/model_catalog.yaml,
+  # calls llama-swap to activate a model, polls the model's /v1/models endpoint
+  # until it returns HTTP 200, and exposes the readiness state.  The main API
+  # proxies to it over HTTP (settings.serving.swap_controller_base_url).
+  #
+  # The sidecar shares the api image (docker/api.Dockerfile) and overrides the
+  # CMD to launch `uvicorn iw_rag.serving.app:create_app` (the S02 app factory)
+  # on :8090.  Sharing the api image is justified by:
+  #   * both processes are pure CPU (no GPU), the same python 3.12-slim +
+  #     uv-based image is the canonical runtime for any iw_rag service.
+  #   * the swap-controller's only new dep is httpx (already present for the
+  #     main API's vLLM client), so a single image covers both surfaces.
+  #   * one base image to keep patched, one tag to bump in 90-meta.
+  # ---------------------------------------------------------------------------
+  swap-controller:
+    # Shares the baked api image by design (same CPU-only runtime; only new dep
+    # is httpx, already present). We reference the image rather than `build:`
+    # because the api build context (`..`) mis-resolves under
+    # `--project-directory .`; the api image is produced by `make api-deploy`.
+    image: iw-rag-api
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - iw_rag.serving.app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8090"
+    environment:
+      # The sidecar reaches llama-swap over the internal Compose network.
+      # These env vars are read by settings.ServingSwapSettings (added in
+      # S01); the sidecar's `app.py` (S02) reads Settings at startup.
+      IW_RAG__SERVING__LLAMA_SWAP_BASE_URL: http://llama-swap:8080
+      IW_RAG__SERVING__CATALOG_PATH: /app/config/model_catalog.yaml
+      # Database DSN is required by Settings() (database is a required field)
+      # but the sidecar does not touch the database; the value is purely
+      # for the pydantic Settings validator.  Operators can override in .env
+      # if the sidecar must run without a live database.
+      IW_RAG__DATABASE__DSN: >-
+        postgresql+psycopg://${POSTGRES_USER:-iw_rag}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-iw_rag}
+      # Model endpoints are required by Settings._load_and_validate_models
+      # (models.yaml is loaded at startup); the sidecar does not call them
+      # but they must resolve for Settings to construct.  Operators override
+      # in .env when running the sidecar outside the benchmark stack.
+      IW_RAG__MODELS__GENERATOR__ENDPOINT: ${IW_RAG__MODELS__GENERATOR__ENDPOINT:-http://llama-swap:8080/v1}
+      IW_RAG__MODELS__EMBEDDER__ENDPOINT: ${IW_RAG__MODELS__EMBEDDER__ENDPOINT:-http://infinity:7997}
+      IW_RAG__MODELS__RERANKER__ENDPOINT: ${IW_RAG__MODELS__RERANKER__ENDPOINT:-http://infinity:7997}
+      IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT: ${IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT:-http://localhost:8002/v1}
+      IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT: ${IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT:-http://localhost:8002/v1}
+    volumes:
+      # The catalog YAML is the only file the sidecar needs from the repo;
+      # it is read-only (settings.serving.catalog_path points at this path).
+      - ./config/model_catalog.yaml:/app/config/model_catalog.yaml:ro
+    depends_on:
+      - llama-swap
+    expose:
+      - "8090"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # GPU reservation for the generator containers the llama-swap proxy will
+  # launch (R-00123 §6).  llama-swap itself is a small Go binary with no
+  # GPU needs; the GPU reservation here is for the vllm/qwen3-*-awq
+  # containers llama-swap `docker run`s when an operator activates a model.
+  # The base `vllm` service in docker/compose.gpu.yaml also reserves a GPU
+  # for the non-benchmark path; on the benchmark stack the base `vllm` is
+  # expected to be stopped (or simply not started) so the GPU is free for
+  # the llama-swap-launched generator containers.  See R-00123 §6 for the
+  # full lifecycle.
+  # ---------------------------------------------------------------------------
+
+# No custom network: llama-swap + swap-controller join the Compose default
+# network (iw-rag_default), the same one the base api / infinity / postgres use,
+# so name-based service discovery works without an external-network declaration.

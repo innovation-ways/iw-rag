@@ -1,0 +1,162 @@
+# Synthetic benchmark golden set (generated alongside data/benchmark_corpus).
+# Relevance = (source_uri, keyword): a chunk is relevant when it belongs to
+# `source` AND its content contains `keyword` (case-insensitive). Keywords are
+# distinctive per doc so recall is not inflated. Regenerate with
+# scripts/gen_benchmark_corpus.py to stay in sync with the corpus.
+dataset:
+  name: benchmark-golden
+  version: v1
+principal_groups:
+- eng
+- finance
+- hr
+- public
+queries:
+- question: What is the total due on invoice INV-2026-0908?
+  source: corpus://bench/finance/inv-2026-0908.md
+  keyword: '26250'
+  query_type: exact_match
+- question: Which purchase order is on invoice INV-2026-0911?
+  source: corpus://bench/finance/inv-2026-0911.md
+  keyword: PO-44130
+  query_type: exact_match
+- question: What is the premium support cost on invoice INV-2026-0903?
+  source: corpus://bench/finance/inv-2026-0903.md
+  keyword: '6000'
+  query_type: exact_match
+- question: Which invoice references purchase order PO-44127?
+  source: corpus://bench/finance/inv-2026-0908.md
+  keyword: PO-44127
+  query_type: exact_match
+- question: What is the root cause of incident INC-2026-002?
+  source: corpus://bench/eng/incidents.md
+  keyword: embedder OOM
+  query_type: exact_match
+- question: What rate limit applies to the /v2/ingest endpoint?
+  source: corpus://bench/eng/api_reference.md
+  keyword: 10 req/min
+  query_type: exact_match
+- question: What is the policy code for the expense reimbursement policy?
+  source: corpus://bench/finance/expense_policy.md
+  keyword: FIN-POL-07
+  query_type: exact_match
+- question: What is the platform license cost on invoice INV-2026-0906?
+  source: corpus://bench/finance/inv-2026-0906.md
+  keyword: '40000'
+  query_type: distractor
+- question: Who is the customer on invoice INV-2026-0905?
+  source: corpus://bench/finance/inv-2026-0905.md
+  keyword: Hooli Group
+  query_type: distractor
+- question: What is the total on invoice INV-2026-0910?
+  source: corpus://bench/finance/inv-2026-0910.md
+  keyword: '8750'
+  query_type: distractor
+- question: How many paid days off does a principal engineer get each year?
+  source: corpus://bench/hr/leave_policy.md
+  keyword: '30'
+  query_type: semantic
+- question: How much does the company contribute to retirement savings?
+  source: corpus://bench/hr/benefits.md
+  keyword: 6%
+  query_type: semantic
+- question: How much can I claim per day when travelling abroad?
+  source: corpus://bench/finance/expense_policy.md
+  keyword: 120 USD per day
+  query_type: semantic
+- question: What should I do if search is responding slowly?
+  source: corpus://bench/eng/runbook.md
+  keyword: ef_search
+  query_type: semantic
+- question: How do I reach support?
+  source: corpus://bench/public/product_intro.md
+  keyword: ticket
+  query_type: semantic
+- question: How long are audit records kept before deletion?
+  source: corpus://bench/public/privacy.md
+  keyword: 365 days
+  query_type: semantic
+- question: What are the payment terms for the customer on invoice INV-2026-0902?
+  source: corpus://bench/finance/inv-2026-0902.md
+  keyword: Net 45
+  query_type: multi_hop
+- question: What annual leave does Grace Hopper receive given her band?
+  source: corpus://bench/hr/leave_policy.md
+  keyword: '30'
+  query_type: multi_hop
+- question: What is the revenue forecast for 2030?
+  source: null
+  keyword: null
+  query_type: unanswerable
+- question: What is the CEO's personal mobile number?
+  source: null
+  keyword: null
+  query_type: unanswerable
+- question: Which invoice will we issue next quarter?
+  source: null
+  keyword: null
+  query_type: unanswerable
+- question: What is the total due on invoice INV-2026-0916?
+  source: corpus://bench/finance/inv-2026-0916.md
+  keyword: '7782'
+  query_type: exact_match
+- question: Which purchase order is on invoice INV-2026-0916?
+  source: corpus://bench/finance/inv-2026-0916.md
+  keyword: PO-44135
+  query_type: exact_match
+- question: What is the total due on invoice INV-2026-0924?
+  source: corpus://bench/finance/inv-2026-0924.md
+  keyword: '11492'
+  query_type: exact_match
+- question: Which purchase order is on invoice INV-2026-0924?
+  source: corpus://bench/finance/inv-2026-0924.md
+  keyword: PO-44143
+  query_type: exact_match
+- question: What is the total due on invoice INV-2026-0932?
+  source: corpus://bench/finance/inv-2026-0932.md
+  keyword: '15202'
+  query_type: exact_match
+- question: Which purchase order is on invoice INV-2026-0932?
+  source: corpus://bench/finance/inv-2026-0932.md
+  keyword: PO-44151
+  query_type: exact_match
+- question: What is the total due on invoice INV-2026-0940?
+  source: corpus://bench/finance/inv-2026-0940.md
+  keyword: '18912'
+  query_type: exact_match
+- question: Which purchase order is on invoice INV-2026-0940?
+  source: corpus://bench/finance/inv-2026-0940.md
+  keyword: PO-44159
+  query_type: exact_match
+- question: What is the total due on invoice INV-2026-0948?
+  source: corpus://bench/finance/inv-2026-0948.md
+  keyword: '22622'
+  query_type: exact_match
+- question: Which purchase order is on invoice INV-2026-0948?
+  source: corpus://bench/finance/inv-2026-0948.md
+  keyword: PO-44167
+  query_type: exact_match
+- question: What was the root cause of incident INC-2026-007?
+  source: corpus://bench/eng/inc-2026-007.md
+  keyword: duplicate chunk
+  query_type: exact_match
+- question: What was the root cause of incident INC-2026-014?
+  source: corpus://bench/eng/inc-2026-014.md
+  keyword: HNSW recall
+  query_type: exact_match
+- question: What was the root cause of incident INC-2026-023?
+  source: corpus://bench/eng/inc-2026-023.md
+  keyword: long-context route
+  query_type: exact_match
+- question: How do I improve retrieval recall from the vector index?
+  source: corpus://bench/eng/kb/kb-2026-002.md
+  keyword: raise ef_search at query
+  query_type: semantic
+- question: Why would the query endpoint reject my request with a 422?
+  source: corpus://bench/eng/kb/kb-2026-009.md
+  keyword: the query field enforces
+  query_type: semantic
+- question: How do I make sure a query only sees one tenant's documents?
+  source: corpus://bench/eng/kb/kb-2026-017.md
+  keyword: the principal's ACL grou
+  query_type: semantic
