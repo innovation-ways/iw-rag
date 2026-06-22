@@ -51,16 +51,16 @@ eval-judges = [                  # offline judge + Ragas eval (never on hot path
   # raises ModuleNotFoundError and the whole ragas eval surface silently skips. Cap
   # below 0.4 to keep ragas importable. langchain is only used via ragas here (never on
   # the hot path; src/ imports no langchain), so this constraint has no other consumer.
-  "langchain-community<0.4",
+  "langchain-community<0.5",
   "deepeval>=1.0",               # CI regression gate (task-1.4); lazily imported in tests
   "nvidia-ml-py",                # pynvml for VRAM readout (F-00093 S05 perf collectors; lazily imported)
 ]
 eval-ragas = [                   # LEAN Ragas runtime baked into the api image so POST /benchmark/run
   "ragas>=0.2",                  # can score context_precision/recall + factual_correctness + noise.
   "datasets>=2",                 # Subset of eval-judges WITHOUT deepeval (CI-only) — keeps the
-  "langchain>=0.2",              # serving image as small as possible. langchain-community<0.4 pin
+  "langchain>=0.2",              # serving image as small as possible. langchain-community<0.5 pin
   "langchain-core>=0.2",         # mirrors eval-judges (ragas vertexai import; see that group).
-  "langchain-community<0.4",
+  "langchain-community<0.5",
   "langchain-openai>=0.2",       # ChatOpenAI/OpenAIEmbeddings wrappers (benchmark_composition wiring)
 ]
 observability = [                # OTel/OpenInference export (tracing degrades to no-op without it)
