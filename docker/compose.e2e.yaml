@@ -9,7 +9,7 @@
 #   IW_ITEM_ID            — work item id (selects ai-dev/active/<ID>/e2e_fixtures)
 #
 # Topology mirrors prod (ADR-016): Caddy is the single entrypoint —
-#   / → Chainlit chat frontend ;  /api/* → FastAPI (prefix stripped).
+#   / → the in-API Operator Console (/console) ;  /api/* → FastAPI (prefix stripped).
 # No GPU: the three model backends (generator/embedder/reranker) are faked by
 # the `e2e-models` stub, and guardrails are disabled. Ports bind 127.0.0.1 only.
 name: ${COMPOSE_PROJECT_NAME:-iw-rag-e2e}
@@ -84,8 +84,8 @@ services:
       # still runs (ISSUP/ISUSE on the generator stub).
       IW_RAG__GUARDRAILS__ENABLED: "false"
       IW_RAG__MODES__VISUAL__ENABLED: "false"
-      # Login-capable demo auth (matches the frontend's IW_RAG_DEMO_USERS so a
-      # chat login and the api resolve to the same principal). analyst is an
+      # Login-capable demo auth (matches the api's IW_RAG_DEMO_USERS so a
+      # console login and the api resolve to the same principal). analyst is an
       # eval-operator + operator so every gated UI is exercisable.
       IW_RAG__API__DEMO_USERS: '{"analyst":{"password":"analyst","token":"demo-finance","groups":["finance","eval-operator"],"operator":true}}'
       IW_RAG__API__UPLOAD_DIR: /data/uploads
@@ -100,36 +100,13 @@ services:
       timeout: 4s
       retries: 40
 
-  # --- Chainlit chat frontend (pure api client) ---
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    restart: "no"
-    depends_on:
-      api:
-        condition: service_healthy
-    environment:
-      IW_RAG_API_BASE: http://api:8000
-      IW_RAG_DEMO_USERS: '{"analyst":{"password":"analyst","token":"demo-finance"}}'
-      CHAINLIT_AUTH_SECRET: e2e-chainlit-secret
-    expose:
-      - "8501"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; socket.create_connection((\"localhost\",8501),2).close()'"]
-      interval: 3s
-      timeout: 4s
-      retries: 40
-
   # --- Caddy edge: single entrypoint (= IW_BROWSER_BASE_URL). Reuses the prod
-  #     Caddyfile: / → frontend, /api/* → api (prefix stripped). ---
+  #     Caddyfile: / → the in-API Operator Console (/console), /api/* → api (prefix stripped). ---
   caddy:
     image: caddy:2-alpine
     restart: "no"
     depends_on:
       api:
-        condition: service_healthy
-      frontend:
         condition: service_healthy
     volumes:
       - ../docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro

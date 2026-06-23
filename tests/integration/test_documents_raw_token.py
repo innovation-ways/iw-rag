@@ -2,8 +2,9 @@
 
 A plain browser click on a citation downloads the source file via a
 short-lived signed ``?token=`` query parameter — without an
-``Authorization`` header (the chainlit frontend authenticates with a
-bearer, so a naive link would 401 the browser navigation).
+``Authorization`` header (the Operator Console / a bearer-token client
+authenticates via the ``Authorization`` header, so a naive link would
+401 the browser navigation).
 
 These tests exercise the **full route** (``TestClient`` + a real
 ``DocumentService`` against a testcontainers Postgres) so the bearer path

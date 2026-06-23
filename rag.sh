@@ -53,8 +53,8 @@ GUARDS_FILES=(-f docker/compose.guards-sidecars.yaml -f docker/compose.guards.ya
 GRAPH_FILES=(-f docker/compose.graph.yaml)
 BENCH_FILES=(-f docker/compose.benchmark.yaml)
 
-CORE_SERVICES=(postgres vllm infinity phoenix api frontend caddy)
-CORE_CONTAINERS=(iw-rag-postgres-1 iw-rag-vllm-1 iw-rag-infinity-1 iw-rag-phoenix-1 iw-rag-api-1 iw-rag-frontend-1 iw-rag-caddy-1)
+CORE_SERVICES=(postgres vllm infinity phoenix api caddy)
+CORE_CONTAINERS=(iw-rag-postgres-1 iw-rag-vllm-1 iw-rag-infinity-1 iw-rag-phoenix-1 iw-rag-api-1 iw-rag-caddy-1)
 GUARD_CONTAINERS=(injguard iw-rag-vllm-guard)
 GRAPH_CONTAINER=iw-rag-graph-pg
 
@@ -131,14 +131,14 @@ print_service_line() {
 }
 
 # =============================================================================
-# CORE STACK  (postgres, vllm, infinity, phoenix, api, frontend, caddy)
+# CORE STACK  (postgres, vllm, infinity, phoenix, api, caddy)
 # =============================================================================
 
 cmd_core() {
   local sub="${1:-help}"; shift || true
   case "$sub" in
     up|start)
-      print_info "Starting core stack (postgres · vllm · infinity · phoenix · api · frontend · caddy)..."
+      print_info "Starting core stack (postgres · vllm · infinity · phoenix · api · caddy)..."
       "${COMPOSE_BASE[@]}" up -d "$@" || return 1
       print_ok "Core stack up — edge: http://localhost:${EDGE_PORT}  ·  phoenix: http://localhost:${PHOENIX_PORT}"
       ;;
@@ -163,12 +163,6 @@ cmd_core() {
       "${COMPOSE_BASE[@]}" up -d --no-build --no-deps --force-recreate api
       print_ok "api redeployed"
       ;;
-    rebuild-front)
-      print_info "Rebuilding + recreating the frontend container..."
-      docker build -t iw-rag-frontend -f frontend/Dockerfile frontend || return 1
-      "${COMPOSE_BASE[@]}" up -d --no-build --no-deps --force-recreate frontend
-      print_ok "frontend redeployed"
-      ;;
     status)
       local i
       for i in "${!CORE_SERVICES[@]}"; do
@@ -179,7 +173,7 @@ cmd_core() {
       "${COMPOSE_BASE[@]}" logs -f --tail "${LOGS_TAIL:-50}" "$@"
       ;;
     *)
-      echo "  Usage: $0 core {up|down|stop|restart|rebuild-api|rebuild-front|status|logs [svc...]}"
+      echo "  Usage: $0 core {up|down|stop|restart|rebuild-api|status|logs [svc...]}"
       ;;
   esac
 }
@@ -453,14 +447,12 @@ menu_core() {
     echo -e "  ${CYAN}2)${NC} Stop"
     echo -e "  ${CYAN}3)${NC} Restart"
     echo -e "  ${CYAN}4)${NC} Rebuild + redeploy api"
-    echo -e "  ${CYAN}5)${NC} Rebuild + redeploy frontend"
-    echo -e "  ${CYAN}6)${NC} Logs (live, all core)"
+    echo -e "  ${CYAN}5)${NC} Logs (live, all core)"
     echo -e "  ${CYAN}0)${NC} Back"; echo ""
     read -r -p "  Choice: " c
     case "$c" in
       1) cmd_core up ;; 2) cmd_core stop ;; 3) cmd_core restart ;;
-      4) cmd_core rebuild-api ;; 5) cmd_core rebuild-front ;;
-      6) cmd_core logs ;; 0|"") return ;; *) print_warn "Invalid choice" ;;
+      4) cmd_core rebuild-api ;; 5) cmd_core logs ;; 0|"") return ;; *) print_warn "Invalid choice" ;;
     esac
     _pause
   done
@@ -496,7 +488,7 @@ menu_main() {
     echo "  ╚══════════════════════════════════════╝"
     echo -e "${NC}"
     get_status_line; echo ""
-    echo -e "  ${CYAN}1)${NC} Start core         (postgres → models → api → frontend → caddy)"
+    echo -e "  ${CYAN}1)${NC} Start core         (postgres → models → api → caddy)"
     echo -e "  ${CYAN}2)${NC} Start everything   (core + graph + guards)"
     echo -e "  ${CYAN}3)${NC} Stop all"
     echo -e "  ${CYAN}4)${NC} Restart core"
@@ -547,9 +539,9 @@ ${BOLD}COMPOUND${NC}
   restart                                Restart core services
   status                                 Full status across core / guards / graph
 
-${BOLD}CORE${NC}        postgres · vllm · infinity · phoenix · api · frontend · caddy
+${BOLD}CORE${NC}        postgres · vllm · infinity · phoenix · api · caddy
   core up|down|stop|restart|status|logs [svc...]
-  core rebuild-api | rebuild-front       Rebuild a baked image + recreate it
+  core rebuild-api                          Rebuild the api image + recreate it
 
 ${BOLD}GUARDRAILS${NC}  injguard:8003 · iw-rag-vllm-guard:8004
   guards up|down|restart|status|logs     up wires the api fail-closed; down disables

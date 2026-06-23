@@ -4,7 +4,7 @@
 # and ./docker/... bind-mount paths resolve correctly.
 COMPOSE := docker compose --project-directory . -f docker/compose.yaml -f docker/compose.gpu.yaml
 
-# Recreating the api/frontend WITHOUT the guards overlay silently drops the guard
+# Recreating the api WITHOUT the guards overlay silently drops the guard
 # endpoint env: GUARDRAILS__ENABLED stays baked-true but GUARD_*__ENDPOINT revert to
 # localhost defaults → input guard fails closed → every query rejected. So the deploy
 # targets must include docker/compose.guards.yaml. It is untracked/local-only, so add
@@ -12,7 +12,7 @@ COMPOSE := docker compose --project-directory . -f docker/compose.yaml -f docker
 GUARDS_OVERLAY := $(wildcard docker/compose.guards.yaml)
 DEPLOY_COMPOSE := $(COMPOSE) $(if $(GUARDS_OVERLAY),-f docker/compose.guards.yaml)
 
-.PHONY: up down front-deploy spike lint type test cov check-assertions config ingest eval eval-ci db-migrate migration-pending api-deploy api-dev benchmark-mode serving-mode visual-up visual-down visual-validate
+.PHONY: up down spike lint type test cov check-assertions config ingest eval eval-ci db-migrate migration-pending api-deploy api-dev benchmark-mode serving-mode visual-up visual-down visual-validate
 
 # Dev hot-reload overlay (docker/compose.dev.yaml) on top of the deploy stack:
 # bind-mounts host ./src over the baked /app/src and runs uvicorn --reload, so
@@ -36,17 +36,6 @@ up:                ## start postgres + vllm + tei (GPU)
 # the real `docker/postgres/init`.
 down:              ## stop services
 	$(COMPOSE) down
-
-# The frontend is a baked image (Dockerfile COPY . ./, no hot-reload), so any
-# change under frontend/ needs a rebuild + container recreate to take effect.
-# We `docker build` directly instead of `$(COMPOSE) build`: the compose service
-# uses `context: ../frontend`, which resolves WRONG under `--project-directory .`
-# (it points one level above the repo root). Build by hand from ./frontend with
-# the image tag compose expects (<project>-<service> = iw-rag-frontend), then
-# recreate only that container with --no-build so compose reuses the fresh image.
-front-deploy:      ## rebuild + recreate ONLY the Chainlit frontend container
-	docker build -t iw-rag-frontend -f frontend/Dockerfile frontend
-	$(DEPLOY_COMPOSE) up -d --no-build --no-deps --force-recreate frontend
 
 # The api is also a baked image (COPY src/). Rebuild + recreate just the api
 # container after backend changes (document management, ingestion, etc.).
@@ -105,7 +94,7 @@ lint:              ## ruff check + format check
 	uv run ruff check . && uv run ruff format --check .
 
 type:              ## mypy --strict on the package
-	uv run mypy --strict src
+	uv run --with playwright mypy --strict src  # playwright is in the `pdf` group; benchmark_routes.py lazy-imports it for PDF export
 
 test:              ## unit + integration suites
 	uv run pytest -q
