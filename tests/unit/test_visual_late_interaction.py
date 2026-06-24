@@ -20,6 +20,8 @@ Two-clocks rule checks:
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from iw_rag.domain.models import RetrievalResult, RetrievedChunk
@@ -284,15 +286,6 @@ def test_acl_postfilter_blocks_when_no_overlap() -> None:
     assert _acl_postfilter(page_acl_tags, principal_groups) is False
 
 
-def test_acl_postfilter_allows_when_acl_tags_empty() -> None:
-    """An empty acl_tags list means the page is publicly readable — allow."""
-    from iw_rag.modes.visual.retriever import _acl_postfilter
-
-    principal_groups = ["some-group"]
-    page_acl_tags: list[str] = []
-    assert _acl_postfilter(page_acl_tags, principal_groups) is True
-
-
 def test_acl_postfilter_blocks_when_principal_groups_empty_and_tags_set() -> None:
     """No matching groups when principal_groups is empty and page has restricted tags."""
     from iw_rag.modes.visual.retriever import _acl_postfilter
@@ -452,3 +445,262 @@ def test_visual_index_report_has_required_fields() -> None:
     assert report.pages_indexed == 10
     assert report.pages_failed == 1
     assert report.bytes_stored == 4096
+
+
+# ---------------------------------------------------------------------------
+# F-00097 — Visual ACL pre-filter wiring (stage-1 SQL boundary)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_visual_retriever_passes_principal_groups_to_stage1_prefetch() -> None:
+    """VisualRetriever MUST thread principal_groups into stage1_prefetch.
+
+    The visual pre-filter is enforced at the stage-1 SQL boundary via
+    ``acl_tags && :principal_groups`` (matches the spine).  If the retriever
+    does not thread ``principal_groups`` from the authenticated
+    ``AccessContext`` into the store call, the SQL runs unfiltered and the
+    pre-filter invariant is violated (Invariant 1, F-00097).
+
+    The principal_groups must come from the AccessContext — never from the
+    query text or any request field (lld-guardrails §3.1).
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from iw_rag.domain.acl import AccessContext
+    from iw_rag.modes.visual.retriever import VisualRetriever, VisualRetrieverConfig
+
+    fake_encoder = MagicMock()
+    fake_encoder.encode_query = AsyncMock(return_value=[[1.0, 0.0]])
+
+    fake_store = MagicMock()
+    fake_store.stage1_prefetch = AsyncMock(return_value=[])
+
+    cfg = VisualRetrieverConfig(top_k=5, prefetch_n=200, pooled_vectors_per_page=38)
+    retriever = VisualRetriever(encoder=fake_encoder, store=fake_store, cfg=cfg)
+
+    ctx = AccessContext(principal_id="user1", principal_groups=("public",))
+    await retriever.retrieve("test", ctx)
+
+    fake_store.stage1_prefetch.assert_called_once()
+    call = fake_store.stage1_prefetch.call_args
+    assert "principal_groups" in call.kwargs, (
+        "stage1_prefetch must receive principal_groups (from AccessContext). "
+        f"Got kwargs: {list(call.kwargs.keys())}"
+    )
+    assert list(call.kwargs["principal_groups"]) == ["public"], (
+        "principal_groups must come from AccessContext, not from query text. "
+        f"Got: {call.kwargs['principal_groups']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_visual_retriever_empty_principal_groups_yields_no_candidates() -> None:
+    """Empty principal_groups ⇒ fail-closed ⇒ empty result.
+
+    Mirrors :class:`~iw_rag.retrieval.acl_filter.AclPredicate.is_empty`
+    semantics.  A principal with no groups must not see any page, even if
+    pages exist in the store (boundary behavior, F-00097).  The store's
+    stage-1 pre-filter is invoked with the empty list so the SQL
+    ``acl_tags && :principal_groups`` evaluates false for every row.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from iw_rag.domain.acl import AccessContext
+    from iw_rag.modes.visual.retriever import VisualRetriever, VisualRetrieverConfig
+
+    fake_encoder = MagicMock()
+    fake_encoder.encode_query = AsyncMock(return_value=[[1.0, 0.0]])
+
+    fake_store = MagicMock()
+    fake_store.stage1_prefetch = AsyncMock(return_value=[])
+
+    cfg = VisualRetrieverConfig(top_k=5, prefetch_n=200, pooled_vectors_per_page=38)
+    retriever = VisualRetriever(encoder=fake_encoder, store=fake_store, cfg=cfg)
+
+    ctx = AccessContext(principal_id="user1", principal_groups=())
+    result = await retriever.retrieve("test", ctx)
+
+    assert result.chunks == [], (
+        f"Empty principal_groups must yield empty chunks; got {len(result.chunks)}"
+    )
+    assert result.candidate_count == 0
+    assert result.acl_applied is True
+
+    # Confirm the pre-filter wiring is in place even for the fail-closed path:
+    # stage1_prefetch must receive an empty principal_groups list so the SQL
+    # `acl_tags && :principal_groups` evaluates false uniformly.
+    fake_store.stage1_prefetch.assert_called_once()
+    call = fake_store.stage1_prefetch.call_args
+    assert "principal_groups" in call.kwargs, (
+        "stage1_prefetch must receive principal_groups (even when empty) "
+        "so the SQL pre-filter runs fail-closed rather than unfiltered."
+    )
+    assert list(call.kwargs["principal_groups"]) == [], (
+        f"principal_groups must be [] for empty-groups ctx; got {call.kwargs['principal_groups']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_visual_retriever_logs_warning_when_postfilter_drops_page(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Same as above but using pytest's ``caplog`` fixture to capture logs."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from iw_rag.domain.acl import AccessContext
+    from iw_rag.modes.visual.retriever import VisualRetriever, VisualRetrieverConfig
+
+    fake_encoder = MagicMock()
+    fake_encoder.encode_query = AsyncMock(return_value=[[1.0, 0.0]])
+
+    leak_page = {
+        "chunk_id": "leak-page-id",
+        "content": "should not have arrived here",
+        "source_uri": "file:///leak.pdf",
+        "page": 1,
+        "acl_tags": ["finance"],
+        "score": 0.9,
+        "bbox": {},
+        "page_image_ref": "file:///leak.pdf#1",
+        "pooled_vectors": [[1.0, 0.0]],
+    }
+    fake_store = MagicMock()
+    fake_store.stage1_prefetch = AsyncMock(return_value=[leak_page])
+
+    cfg = VisualRetrieverConfig(top_k=5, prefetch_n=200, pooled_vectors_per_page=38)
+    retriever = VisualRetriever(encoder=fake_encoder, store=fake_store, cfg=cfg)
+
+    ctx = AccessContext(principal_id="user1", principal_groups=("public",))
+
+    with caplog.at_level(logging.WARNING, logger="iw_rag.modes.visual.retriever"):
+        result = await retriever.retrieve("test", ctx)
+
+    # The post-filter must have dropped the page (no leak).
+    assert all(c.chunk_id != "leak-page-id" for c in result.chunks), (
+        "Post-filter must drop the leaked page — no cross-tenant leak."
+    )
+    # And emitted a WARNING identifying the page id and the pre-filter defect.
+    warning_records = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warning_records, (
+        "Post-filter dropping a page must emit a WARNING (pre-filter defect signal)."
+    )
+    assert any("leak-page-id" in r.getMessage() for r in warning_records), (
+        f"WARNING must identify the dropped page id; got: "
+        f"{[r.getMessage() for r in warning_records]}"
+    )
+
+
+def test_acl_postfilter_blocks_when_acl_tags_empty() -> None:
+    """Empty acl_tags ⇒ INVISIBLE to every principal (fail-closed).
+
+    After S01 the post-filter matches the spine's ``acl_tags && :principal_groups``
+    semantics and the ingestion contract in ``enrich.py`` ("an empty resolver
+    result yields ``acl_tags = []`` → the document is invisible to every
+    principal; fail-closed, never world-readable").  The previous behavior —
+    treat ``[]`` as publicly readable — was a security defect that this step
+    closes (F-00097, Boundary Behavior table; Invariant 5).
+    """
+    from iw_rag.modes.visual.retriever import _acl_postfilter
+
+    principal_groups = ["some-group"]
+    page_acl_tags: list[str] = []
+    assert _acl_postfilter(page_acl_tags, principal_groups) is False, (
+        "Empty acl_tags must be invisible (deny) — matches spine semantics "
+        "and enrich.py ingestion contract (fail-closed, never world-readable)."
+    )
+
+
+def test_acl_postfilter_blocks_when_principal_groups_empty() -> None:
+    """Empty principal_groups + non-empty page tags ⇒ deny (fail-closed)."""
+    from iw_rag.modes.visual.retriever import _acl_postfilter
+
+    principal_groups: list[str] = []
+    page_acl_tags = ["restricted"]
+    assert _acl_postfilter(page_acl_tags, principal_groups) is False
+
+
+def test_acl_postfilter_blocks_when_both_empty() -> None:
+    """Empty principal_groups AND empty page tags ⇒ deny (fail-closed).
+
+    Both sides of the intersection empty: nothing matches; deny.  Matches
+    the spine (``[] && [] == false``).
+    """
+    from iw_rag.modes.visual.retriever import _acl_postfilter
+
+    assert _acl_postfilter([], []) is False
+
+
+# ---------------------------------------------------------------------------
+# F-00097 — Defense-in-depth no-op on pre-filtered data
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_visual_retriever_postfilter_is_noop_on_prefiltered_data(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """On correctly pre-filtered data, the post-filter is a no-op (drops zero).
+
+    AC3 / Invariant 6 (F-00097): the post-filter is a defense-in-depth
+    secondary check that runs AFTER the stage-1 SQL pre-filter.  When the
+    pre-filter has already excluded all unreadable pages (this test feeds
+    the retriever a fully-readable set), the post-filter must drop zero
+    items and emit NO WARNING — proving the seam is live but the pre-filter
+    is doing its job (not dead code).
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    from iw_rag.domain.acl import AccessContext
+    from iw_rag.modes.visual.retriever import VisualRetriever, VisualRetrieverConfig
+
+    fake_encoder = MagicMock()
+    fake_encoder.encode_query = AsyncMock(return_value=[[1.0, 0.0]])
+
+    # Two pages that survive the pre-filter (public-tagged).
+    readable_page_1 = {
+        "chunk_id": "c-pub-1",
+        "content": "Public readable 1",
+        "source_uri": "file:///pub1.pdf",
+        "page": 1,
+        "acl_tags": ["public"],
+        "score": 0.9,
+        "bbox": {},
+        "page_image_ref": "file:///pub1.pdf#1",
+        "pooled_vectors": [[1.0, 0.0]],
+    }
+    readable_page_2 = {
+        "chunk_id": "c-pub-2",
+        "content": "Public readable 2",
+        "source_uri": "file:///pub2.pdf",
+        "page": 1,
+        "acl_tags": ["public"],
+        "score": 0.8,
+        "bbox": {},
+        "page_image_ref": "file:///pub2.pdf#1",
+        "pooled_vectors": [[0.0, 1.0]],
+    }
+    fake_store = MagicMock()
+    fake_store.stage1_prefetch = AsyncMock(return_value=[readable_page_1, readable_page_2])
+
+    cfg = VisualRetrieverConfig(top_k=5, prefetch_n=200, pooled_vectors_per_page=38)
+    retriever = VisualRetriever(encoder=fake_encoder, store=fake_store, cfg=cfg)
+
+    ctx = AccessContext(principal_id="user1", principal_groups=("public",))
+
+    with caplog.at_level(logging.WARNING, logger="iw_rag.modes.visual.retriever"):
+        result = await retriever.retrieve("test", ctx)
+
+    # Both pages survive end-to-end; the post-filter dropped zero.
+    assert len(result.chunks) == 2, (
+        f"Post-filter must be a no-op on correctly pre-filtered data; "
+        f"got {len(result.chunks)} chunks"
+    )
+    assert {c.chunk_id for c in result.chunks} == {"c-pub-1", "c-pub-2"}
+
+    # No WARNING records on the post-filter path (the pre-filter did its job).
+    warning_records = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not warning_records, (
+        "Post-filter must be a no-op on correctly pre-filtered data; got "
+        f"WARNING records: {[r.getMessage() for r in warning_records]}"
+    )

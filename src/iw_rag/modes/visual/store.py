@@ -21,10 +21,17 @@ D18 [DECISION]: The default backend is ``postgres_candidates`` because it
 preserves the single-store invariant.  ``backend=qdrant`` requires the T1
 trigger (headline promotion) and fails fast at startup if Qdrant is unreachable.
 
-Open item (task-4b Risks §2): ``visual_pages.acl_tags`` enables future stage-1
-pre-filtering in Postgres.  Until that index is used, the ACL post-filter in
-VisualRetriever is the enforcement seam (late-interaction path is restricted
-to uniformly-readable demo corpora until pre-filter is wired).
+ACL posture (F-00097): ``stage1_prefetch`` enforces the ACL pre-filter at the
+SQL boundary using the existing ``visual_pages_acl_gin`` index.  The
+``WHERE acl_tags && :principal_groups`` clause is bound from the
+authenticated ``AccessContext`` only — never from the query text or model
+output (lld-guardrails §3.1).  An empty ``principal_groups`` is fail-closed
+(mirrors :class:`~iw_rag.retrieval.acl_filter.AclPredicate.is_empty`): no
+unfiltered query is ever issued.  The visual late-interaction path therefore
+honors the headline security invariant "ACL is a pre-filter, NEVER a post-
+filter" on multi-tenant corpora; the per-page ``_acl_postfilter`` in
+:class:`~iw_rag.modes.visual.retriever.VisualRetriever` remains as a
+defense-in-depth check.
 
 References:
 - task-4b-visual-rag-route §5 (store abstraction, T1 trigger)
@@ -37,6 +44,8 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Protocol, runtime_checkable
+
+from iw_rag.retrieval.acl_filter import AclPredicate
 
 _log = logging.getLogger(__name__)
 
@@ -86,21 +95,32 @@ class MultiVectorStore(Protocol):
         query_proxy: list[float],
         *,
         prefetch_n: int = 200,
+        principal_groups: list[str],
     ) -> list[dict[str, Any]]:
-        """Stage-1 cheap prefetch: ANN over the mean-pooled proxy.
+        """Stage-1 cheap prefetch: ANN over the mean-pooled proxy, ACL pre-filtered.
 
         Returns the top-``prefetch_n`` candidate page records (including their
-        stored ``pooled_vectors`` for stage-2 MaxSim).
+        stored ``pooled_vectors`` for stage-2 MaxSim).  ACL is enforced at the
+        SQL boundary via ``WHERE acl_tags && :principal_groups`` (GIN-accelerated
+        by ``visual_pages_acl_gin``), so no unreadable page ever enters the
+        ranked set — matching the spine's pre-filter invariant
+        (F-00097, ``AclPredicate.sql_clause()``).
 
         Args:
             query_proxy: The mean-pooled single-vector proxy for the query.
             prefetch_n: Number of candidates to prefetch.
+            principal_groups: The authenticated caller's ACL groups
+                (from ``AccessContext``, never from query text).  An empty list
+                is fail-closed: the SQL ``acl_tags && :principal_groups`` is
+                false for every row, so no candidates are returned (no
+                unfiltered query is issued).  Mirrors
+                :class:`~iw_rag.retrieval.acl_filter.AclPredicate.is_empty`.
 
         Returns:
             List of candidate page dicts, each containing at least:
             ``chunk_id``, ``content``, ``source_uri``, ``page``, ``acl_tags``,
             ``score`` (proxy similarity), ``pooled_vectors``, ``bbox``,
-            ``page_image_ref``.
+            ``page_image_ref``.  Empty when ``principal_groups`` is empty.
         """
         ...
 
@@ -226,26 +246,56 @@ class PostgresCandidateStore:
         query_proxy: list[float],
         *,
         prefetch_n: int = 200,
+        principal_groups: list[str],
     ) -> list[dict[str, Any]]:
-        """Stage-1 ANN over the mean-pooled proxy vector (pgvector HNSW).
+        """Stage-1 ANN over the mean-pooled proxy vector (pgvector HNSW), ACL pre-filtered.
 
         Retrieves up to ``prefetch_n`` candidate pages using cosine similarity
-        over the proxy vector column.
+        over the proxy vector column.  ACL is enforced at the SQL boundary via
+        ``WHERE acl_tags && :principal_groups`` (GIN-accelerated by the existing
+        ``visual_pages_acl_gin`` index), so a page the principal cannot see
+        never enters the candidate set — matching the spine's pre-filter
+        invariant (F-00097).
+
+        The pre-filter ``&&`` reproduces the spine's empty-``acl_tags``
+        semantics with no special-case: an item with ``acl_tags = []`` is
+        invisible to every principal (the SQL ``[] && :principal_groups``
+        is false for any non-empty ``principal_groups``, and false for an
+        empty ``principal_groups`` too — fail-closed).  This matches the
+        ingestion contract in :mod:`iw_rag.ingestion.enrich` ("an empty
+        resolver result yields ``acl_tags = []`` → the document is invisible
+        to every principal; fail-closed, never world-readable").  Broadly-
+        readable documents carry an explicit shared tag (e.g. ``"public"``)
+        that principals also hold; ``[]`` is never treated as public.
 
         Args:
             query_proxy: Mean-pooled query proxy vector.
             prefetch_n: Maximum candidates to return.
+            principal_groups: The authenticated caller's ACL groups (from
+                ``AccessContext``, never from query text).  An empty list
+                short-circuits to ``[]`` (fail-closed); no unfiltered query
+                is ever issued.  Mirrors
+                :class:`~iw_rag.retrieval.acl_filter.AclPredicate.is_empty`.
 
         Returns:
-            List of candidate dicts (see protocol docstring).
+            List of candidate dicts (see protocol docstring).  Empty when
+            ``principal_groups`` is empty or the query has no readable
+            matches in the prefetch budget.
         """
         import json
 
         from sqlalchemy import text as sql_text
 
+        # Bind the ACL pre-filter at the SQL boundary (F-00097).  We reuse the
+        # spine's AclPredicate so the visual pre-filter SQL is textually
+        # identical to ``acl_tags && :principal_groups`` (Invariant 5).
+        acl = AclPredicate(principal_groups=tuple(principal_groups))
+        if acl.is_empty:
+            return []
+
         proxy_str = "[" + ",".join(str(v) for v in query_proxy) + "]"
         sql = sql_text(
-            """
+            f"""
             SELECT
                 chunk_id,
                 source_uri,
@@ -257,13 +307,17 @@ class PostgresCandidateStore:
                 page_image_ref,
                 1 - (proxy_vector <=> CAST(:query_vector AS vector)) AS score
             FROM iw_rag.visual_pages
+            WHERE {acl.sql_clause()}
             ORDER BY proxy_vector <=> CAST(:query_vector AS vector)
             LIMIT :n
             """
         )
         candidates: list[dict[str, Any]] = []
         async with self._session_factory() as session:
-            result = await session.execute(sql, {"query_vector": proxy_str, "n": prefetch_n})
+            result = await session.execute(
+                sql,
+                {"query_vector": proxy_str, "n": prefetch_n, **acl.params()},
+            )
             for row in result.all():
                 pooled = (
                     json.loads(row.pooled_vectors)
@@ -348,8 +402,17 @@ class QdrantMultiVectorStore:
         query_proxy: list[float],
         *,
         prefetch_n: int = 200,
+        principal_groups: list[str],
     ) -> list[dict[str, Any]]:
-        """Not implemented — stub seam."""
+        """Not implemented — stub seam.
+
+        Args:
+            query_proxy: Mean-pooled query proxy vector.
+            prefetch_n: Number of candidates to prefetch.
+            principal_groups: The authenticated caller's ACL groups (must be
+                applied at the Qdrant-side filter when this seam is wired;
+                F-00097 spine parity).
+        """
         raise NotImplementedError("QdrantMultiVectorStore is a stub/seam — see ADR-007")
 
 

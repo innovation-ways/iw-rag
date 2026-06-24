@@ -17,10 +17,32 @@ cost time in WI-031; do NOT regress it).
 When AGE is unavailable at startup the store raises :class:`GraphStoreUnavailable`
 on any operation (fail-fast; never crash the spine).
 
+ACL posture (F-00097, Option A — SQL-boundary pre-filter):
+ACL is enforced at the chunk-fetch SQL boundary, not during graph traversal.
+:mod:`scripts.run_graphrag_eval` (``_StrChunkRepo.get_by_str_ids``) is the
+adapter the :class:`~iw_rag.modes.graphrag.retriever.GraphRetriever` uses on
+the hot path; it emits
+``WHERE c.id = ANY(:ids) AND acl_tags && :principal_groups`` (GIN-accelerated
+by the existing ``chunks_acl_gin`` index), matching the spine's pre-filter
+invariant.  No chunk row outside the principal's ACL is ever fetched, ranked,
+or fed to the generator.
+
+Option-A residual (honest limitation): the graph traversal still walks entity
+names extracted from every chunk, including unreadable ones — a reviewer
+could infer the existence and name of entities derived from restricted chunks
+by observing the resolved entity list.  No unreadable *chunk* content is
+ever fetched, ranked, or generated; this is the SQL-boundary pre-filter
+invariant.  Traversal-level ACL (Option B — per-edge ``acl_tags`` on AGE
+nodes/edges) is a recommended follow-up; it requires AGE schema + extraction
+changes plus a graph re-index.  See F-00097 design, "Out of Scope" §"GraphRAG
+Option B".
+
 References:
 - lld-graphrag §2 (store interface), §3 (algorithms)
 - lld-data-model §8 (AGE storage + back-refs)
 - task-4a-graphrag-route §1 (store boundary)
+- F-00097 (Graph/Visual ACL pre-filter — Option A seam lives in the
+  chunk-fetch SQL adapter; this module is unchanged at the SQL level)
 """
 
 from __future__ import annotations

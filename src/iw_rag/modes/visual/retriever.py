@@ -5,15 +5,20 @@ HOT-PATH: this module is reachable from /query.  It imports ColVisionEncoder
 VlmCaptioner, or scripts.index_visual.  See two-clocks enforcement in
 tests/unit/test_visual_offline_guard.py.
 
-ACL posture (open item, task-4b Risks §2):
-This path uses an ACL POST-filter on the matched page's source ``chunks.acl_tags``
-before the page reaches the generator.  The spine uses a pre-filter (NEVER
-retrieve-then-drop), but the visual late-interaction path has no native stage-1
-pre-filter until ``visual_pages.acl_tags`` has a GIN index and the query is
-rewritten to filter before the HNSW step.  Until that pre-filter is wired, the
-late-interaction path is restricted to uniformly-readable demo corpora, OR the
-parse-then-caption fallback should be used (which inherits the spine's pre-filter
-ACL natively).
+ACL posture (F-00097):
+ACL is a stage-1 SQL PRE-filter, not a post-filter.  ``principal_groups`` is
+threaded from the authenticated ``AccessContext`` into
+``MultiVectorStore.stage1_prefetch``, which issues
+``WHERE acl_tags && :principal_groups`` (GIN-accelerated by the existing
+``visual_pages_acl_gin`` index).  No page outside the principal's ACL can
+reach the stage-2 MaxSim rerank or the generator.  This matches the spine's
+pre-filter invariant (``acl_filter.AclPredicate``) on multi-tenant corpora
+— the previous "restricted to uniformly-readable demo corpora" caveat is
+removed.  An empty ``principal_groups`` short-circuits to an empty result
+(fail-closed); ``[]``-tagged pages are invisible to every principal (no
+special-case).  The per-page ``_acl_postfilter`` is kept as defense-in-depth:
+on correctly pre-filtered data it is a no-op; if it ever drops a page it
+emits a ``logging.WARNING`` (pre-filter defect signal).
 
 D18 [DECISION — router]: The visual route is added to the router as a new
 ``"visual"`` label.  When ``modes.visual.enabled=false`` (default), the edge
@@ -25,6 +30,7 @@ References:
 - task-4b-visual-rag-route §6–§8 (retriever, adapter, heatmap)
 - lld-retrieval-spine §4 (RetrievalResult contract)
 - CONVENTIONS.md §1 (chunks: list[RetrievedChunk], retriever, acl_applied)
+- F-00097 (visual pre-filter — this module)
 """
 
 from __future__ import annotations
@@ -42,17 +48,25 @@ _log = logging.getLogger(__name__)
 
 
 def _acl_postfilter(page_acl_tags: list[str], principal_groups: list[str]) -> bool:
-    """ACL post-filter predicate: allow iff page tags ∩ principal_groups is non-empty.
+    """ACL post-filter predicate (defense-in-depth).
 
-    An empty ``page_acl_tags`` means the page is publicly readable — always allow.
-    An empty ``principal_groups`` with restricted tags → deny (fail-closed).
+    Allow iff page tags ∩ principal_groups is non-empty.
 
-    OPEN ITEM (task-4b Risks §2): This is a post-filter on the matched page
-    boundary.  The model never sees a dropped page, but the pre-filter invariant
-    (CONVENTIONS.md §6 / lld-data-model §5) requires the stage-1 prefetch to
-    also pre-filter on acl_tags once the GIN index on visual_pages.acl_tags is
-    added.  Until then, the late-interaction path is restricted to uniformly-
-    readable demo corpora.
+    This is a SECONDARY check that runs after the stage-1 SQL pre-filter in
+    ``PostgresCandidateStore.stage1_prefetch`` (F-00097).  On correctly pre-
+    filtered data it is a no-op.  If it ever drops a page, that signals a
+    pre-filter defect and the caller logs a ``logging.WARNING`` so the defect
+    surfaces in operations.  It must never be the sole enforcement seam.
+
+    Both empty ``page_acl_tags`` and empty ``principal_groups`` are fail-closed
+    (return ``False``).  This mirrors the spine's
+    ``acl_tags && :principal_groups`` semantics — the SQL ``[] && anything``
+    is false — and matches the ingestion contract in
+    :mod:`iw_rag.ingestion.enrich` ("an empty resolver result yields
+    ``acl_tags = []`` → the document is invisible to every principal; fail-
+    closed, never world-readable").  ``[]`` is never "public"; broadly-
+    readable documents carry an explicit shared tag (e.g. ``"public"``) that
+    principals also hold.
 
     Args:
         page_acl_tags: The page's ACL entitlement tags.
@@ -61,9 +75,6 @@ def _acl_postfilter(page_acl_tags: list[str], principal_groups: list[str]) -> bo
     Returns:
         ``True`` if the page is readable by the principal; ``False`` otherwise.
     """
-    if not page_acl_tags:
-        # Empty tags → publicly readable → allow.
-        return True
     return bool(set(page_acl_tags) & set(principal_groups))
 
 
@@ -125,15 +136,25 @@ class VisualRetriever:
 
     Implements the ColPali/ColQwen2.5 two-stage retrieve:
     1. ``encode_query`` → mean-pooled proxy.
-    2. Stage-1 (prefetch): cheap HNSW ANN over the proxy → ``prefetch_n`` candidates.
+    2. Stage-1 (prefetch, ACL PRE-FILTERED): cheap HNSW ANN over the proxy,
+       gated by ``WHERE acl_tags && :principal_groups`` (GIN-accelerated by
+       ``visual_pages_acl_gin``), → up to ``prefetch_n`` candidates.  No
+       page outside the principal's ACL ever enters the ranked set
+       (F-00097, Invariant 1).  ``principal_groups`` derives solely from
+       the authenticated ``AccessContext`` (never from query text or model
+       output — lld-guardrails §3.1).
     3. Stage-2 (MaxSim rerank): full-resolution MaxSim over candidates → top-``top_k``.
-    4. ACL post-filter on the matched page's source ``chunks.acl_tags``.
+    4. ACL post-filter on the matched page's source ``chunks.acl_tags``
+       (defense-in-depth — on correctly pre-filtered data this is a no-op;
+       a drop is logged as ``logging.WARNING`` and indicates a pre-filter
+       defect).
     5. Adapt to ``RetrievalResult`` (page text as ``content``, bbox, optional heatmap).
 
     Error handling (degrade, never block — lld-multimodal §5):
     - Encoder OOM / GPU busy → ``VisualEncodeUnavailable`` (caller collapses to spine).
     - Empty candidate set → empty ``RetrievalResult`` (loop's weak-support path).
-    - ACL drops all → empty ``RetrievalResult`` (no leak).
+    - Empty ``principal_groups`` (fail-closed) → empty ``RetrievalResult`` (no leak).
+    - ACL post-filter drops all → empty ``RetrievalResult`` (no leak).
 
     Attributes:
         encoder: The ColVisionEncoder (transient; encode_query per-query).
@@ -172,6 +193,14 @@ class VisualRetriever:
         (same ``RetrievalResult`` contract) so the generator and graders are
         mode-agnostic.
 
+        ACL pre-filter (F-00097): ``principal_groups`` is taken from the
+        authenticated ``AccessContext`` (never from the query string or any
+        request field — lld-guardrails §3.1) and threaded into the store's
+        stage-1 pre-filter, which issues
+        ``WHERE acl_tags && :principal_groups`` at the SQL boundary
+        (GIN-accelerated by ``visual_pages_acl_gin``).  No page outside the
+        principal's ACL can reach stage-2 MaxSim or the generator.
+
         Args:
             query: The user query string.
             access: The authenticated AccessContext (principal_groups for ACL).
@@ -181,14 +210,23 @@ class VisualRetriever:
 
         Returns:
             A ``RetrievalResult`` with ``retriever="visual"`` and ``acl_applied=True``.
-            An empty candidate set (e.g. all ACL-dropped) → empty ``chunks`` list
-            (the loop's weak-support path handles this gracefully).
+            An empty candidate set (e.g. all ACL-dropped, empty
+            ``principal_groups``, or empty ACL pre-filter set) → empty
+            ``chunks`` list (the loop's weak-support path handles this gracefully).
 
         Raises:
             VisualEncodeUnavailable: If the encoder is unavailable (OOM, GPU
                 busy, timeout).  The caller (router edge) falls back to the spine.
         """
         effective_top_k = top_k if top_k is not None else self.cfg.top_k
+
+        # ----------------------------------------------------------------
+        # ACL input: principal_groups come ONLY from the authenticated
+        # AccessContext (never from query text or any request field —
+        # lld-guardrails §3.1).  Computed once and reused for both the
+        # stage-1 SQL pre-filter and the defense-in-depth post-filter.
+        # ----------------------------------------------------------------
+        principal_groups = list(access.principal_groups)
 
         # ----------------------------------------------------------------
         # Step 1: encode_query → multi-vector query tokens (transient)
@@ -207,9 +245,17 @@ class VisualRetriever:
         query_proxy = mean_pool(query_vecs) if query_vecs else [0.0]
 
         # ----------------------------------------------------------------
-        # Step 2: Stage-1 prefetch — cheap ANN over mean-pooled proxy
+        # Step 2: Stage-1 prefetch — ACL PRE-FILTERED cheap ANN.
+        # The store binds `acl_tags && :principal_groups` at the SQL
+        # boundary (GIN-accelerated).  An empty principal_groups is
+        # fail-closed inside the store and yields [] without running an
+        # unfiltered query.
         # ----------------------------------------------------------------
-        candidates = await self.store.stage1_prefetch(query_proxy, prefetch_n=self.cfg.prefetch_n)
+        candidates = await self.store.stage1_prefetch(
+            query_proxy,
+            prefetch_n=self.cfg.prefetch_n,
+            principal_groups=principal_groups,
+        )
 
         if not candidates:
             _log.debug("VisualRetriever: stage-1 returned 0 candidates for query %r", query[:80])
@@ -243,20 +289,24 @@ class VisualRetriever:
         scored.sort(key=lambda x: x[0], reverse=True)
 
         # ----------------------------------------------------------------
-        # Step 4: ACL post-filter
-        # (OPEN ITEM: promote to stage-1 pre-filter when acl_tags GIN index added)
+        # Step 4: ACL post-filter (defense-in-depth).
+        # The pre-filter in step 2 is the enforcement seam.  On correctly
+        # pre-filtered data this loop drops zero items; if it ever drops
+        # one, we emit a WARNING (pre-filter defect signal — F-00097 AC3,
+        # Invariant 6).
         # ----------------------------------------------------------------
-        principal_groups = list(access.principal_groups)
         surviving: list[tuple[float, dict[str, Any], list[list[float]] | None]] = []
         for score_val, cand, heatmap_matrix in scored:
             page_acl = list(cand.get("acl_tags", []))
             if _acl_postfilter(page_acl, principal_groups):
                 surviving.append((score_val, cand, heatmap_matrix))
             else:
-                _log.debug(
-                    "VisualRetriever: ACL post-filter dropped chunk_id=%r (page acl_tags=%r)",
+                _log.warning(
+                    "VisualRetriever: post-filter dropped chunk_id=%r — pre-filter "
+                    "defect (page acl_tags=%r, principal_groups=%r)",
                     cand.get("chunk_id"),
                     page_acl,
+                    principal_groups,
                 )
 
         # Take top-k

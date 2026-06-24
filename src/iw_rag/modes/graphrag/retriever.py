@@ -5,16 +5,38 @@ HOT-PATH: this module IS reachable from /query.  It calls ``AgeGraphStore``
 the indexer, never the extraction model.  The two-clocks rule is enforced by the
 offline guard test (``test_graphrag_offline_guard.py``).
 
-ACL posture (open item, task-4a Risks §1):
-This path uses an ACL POST-filter on the resolved chunks' ``acl_tags`` before any
-chunk reaches the generator.  The spine enforces ACL as a pre-filter (WHERE
-acl_tags && :principal_groups *before* retrieval); the graph route cannot pre-filter
-during graph traversal without per-edge ``acl_tags`` on AGE nodes/edges.
+ACL posture (F-00097, Option A — SQL-boundary pre-filter):
+ACL is a pre-filter at the chunk-fetch SQL boundary, matching the spine.  The
+``GraphRetriever`` threads ``principal_groups`` (sourced solely from the
+authenticated ``AccessContext``) into the chunk-repo's ``get_by_str_ids`` call,
+which emits ``WHERE acl_tags && :principal_groups`` (GIN-accelerated by the
+existing ``chunks_acl_gin`` index).  No chunk row outside the principal's ACL
+is ever fetched, ranked, or fed to the generator — the graph route therefore
+honors the headline security invariant "ACL is a pre-filter, NEVER a post-
+filter" on multi-tenant corpora.
 
-Until the graph traversal itself is ACL-scoped, the graph route is restricted to
-uniformly-readable demo corpora (task-4a Risks §1 — conservative rule).  The
-post-filter ensures the generator NEVER sees a chunk whose ``acl_tags`` do not
-overlap ``access.principal_groups``.
+The per-chunk ``_acl_postfilter`` is retained as a defense-in-depth secondary
+check: on correctly pre-filtered data it is a no-op; if it ever drops a chunk
+it emits a ``logging.WARNING`` identifying the chunk id and the pre-filter
+defect (AC3 / Invariant 6).  It must never be the sole enforcement seam.
+
+Empty-``acl_tags`` semantics: a chunk with ``acl_tags = []`` is invisible to
+every principal — the SQL ``[] && :principal_groups`` is false for any non-
+empty ``principal_groups`` and false for an empty one too (fail-closed).  This
+matches the ingestion contract in :mod:`iw_rag.ingestion.enrich` ("an empty
+resolver result yields ``acl_tags = []`` → the document is invisible to every
+principal; fail-closed, never world-readable") and the spine's pre-filter.
+There is **no special-case for ``[]``** — broadly-readable documents carry an
+explicit shared tag (e.g. ``"public"``) that principals also hold.
+
+Option-A residual (honest limitation): the graph traversal still walks entity
+names extracted from every chunk, including unreadable ones — a reviewer could
+infer the existence and name of entities derived from restricted chunks by
+observing the resolved entity list.  No unreadable *chunk* content is ever
+fetched, ranked, or generated; this is the SQL-boundary pre-filter invariant.
+Traversal-level ACL (Option B — per-edge ``acl_tags`` on AGE nodes/edges) is a
+recommended follow-up; it requires AGE schema + extraction changes plus a
+graph re-index.  See F-00097 design, "Out of Scope" §"GraphRAG Option B".
 
 D22 [DECISION — LightRAG vs store-traversal]:
 LightRAG's query engine is heavy and requires a running LLM endpoint (the
@@ -26,10 +48,11 @@ entities are found the result is an empty ``RetrievalResult`` (the router falls
 back to the spine).  This approach is model-agnostic and fully fakeable in tests.
 
 References:
-- task-4a-graphrag-route §7–§9 (retriever, adapter, ACL post-filter)
+- task-4a-graphrag-route §7–§9 (retriever, adapter, ACL pre-filter)
 - lld-graphrag §3 (GraphRetriever public interface)
 - lld-retrieval-spine §4 (RetrievalResult contract)
 - CONVENTIONS.md §1 (chunks: list[RetrievedChunk], retriever, acl_applied)
+- F-00097 (Graph/Visual ACL pre-filter — this module)
 """
 
 from __future__ import annotations
@@ -51,18 +74,26 @@ _log = logging.getLogger(__name__)
 
 
 def _acl_postfilter(chunk_acl_tags: list[str], principal_groups: list[str]) -> bool:
-    """ACL post-filter predicate: allow iff chunk tags ∩ principal_groups non-empty.
+    """ACL post-filter predicate (defense-in-depth).
 
-    An empty ``chunk_acl_tags`` means the chunk is publicly readable — always
-    allow.  A non-empty ``chunk_acl_tags`` with zero overlap against
-    ``principal_groups`` (including when ``principal_groups`` is empty) → deny
-    (fail-closed).
+    Allow iff chunk tags ∩ principal_groups is non-empty.
 
-    OPEN ITEM (task-4a Risks §1): This is a post-filter on the resolved-chunk
-    boundary.  The model never sees a dropped chunk, but the pre-filter invariant
-    (CONVENTIONS.md §6 / lld-data-model §5) requires pre-filter at the traversal
-    level once per-edge ``acl_tags`` are added to AGE nodes/edges.  Until then
-    the graph route is restricted to uniformly-readable demo corpora.
+    This is a SECONDARY check that runs after the SQL-boundary pre-filter
+    in :class:`scripts.run_graphrag_eval._StrChunkRepo.get_by_str_ids`
+    (F-00097, Option A).  On correctly pre-filtered data it is a no-op.  If
+    it ever drops a chunk, that signals a pre-filter defect and the caller
+    logs a ``logging.WARNING`` so the defect surfaces in operations
+    (AC3 / Invariant 6).  It must never be the sole enforcement seam.
+
+    Both empty ``chunk_acl_tags`` and empty ``principal_groups`` are fail-closed
+    (return ``False``).  This mirrors the spine's
+    ``acl_tags && :principal_groups`` semantics — the SQL ``[] && anything``
+    is false — and matches the ingestion contract in
+    :mod:`iw_rag.ingestion.enrich` ("an empty resolver result yields
+    ``acl_tags = []`` → the document is invisible to every principal; fail-
+    closed, never world-readable").  ``[]`` is never "public"; broadly-
+    readable documents carry an explicit shared tag (e.g. ``"public"``) that
+    principals also hold.
 
     Args:
         chunk_acl_tags: The chunk's ACL entitlement tags.
@@ -71,9 +102,6 @@ def _acl_postfilter(chunk_acl_tags: list[str], principal_groups: list[str]) -> b
     Returns:
         ``True`` if the chunk is readable by the principal; ``False`` otherwise.
     """
-    if not chunk_acl_tags:
-        # Empty tags → publicly readable → always allow.
-        return True
     return bool(set(chunk_acl_tags) & set(principal_groups))
 
 
@@ -130,8 +158,13 @@ class GraphRetriever:
     Implements the retrieve-and-adapt loop:
     1. ``AgeGraphStore.query_subgraph`` — OpenCypher traversal from query seeds.
     2. ``AgeGraphStore.resolve_to_chunks`` — entity names → source chunk_ids.
-    3. Fetch chunk rows via ``chunk_repo.get_by_str_ids``.
-    4. ACL post-filter (drop chunks whose ``acl_tags`` ∩ ``principal_groups`` = ∅).
+    3. Fetch chunk rows via ``chunk_repo.get_by_str_ids`` — **ACL pre-filtered
+       at the SQL boundary** via ``acl_tags && :principal_groups`` (F-00097,
+       Option A; GIN-accelerated by ``chunks_acl_gin``).  No unreadable row
+       is ever returned to Python.
+    4. ACL post-filter (defense-in-depth — on correctly pre-filtered data
+       it is a no-op; a drop emits a ``logging.WARNING`` identifying the
+       chunk id, a pre-filter defect signal).
     5. Adapt to ``RetrievedChunk``s ordered by score; set ``retriever="graphrag"``,
        ``acl_applied=True``.
 
@@ -148,11 +181,17 @@ class GraphRetriever:
     - ``GraphStoreUnavailable`` → empty ``RetrievalResult``.
     - Any other unexpected error → empty ``RetrievalResult`` + WARNING log.
     - Empty entity list → empty ``RetrievalResult`` (graph not yet indexed).
-    - ACL drops all → empty ``RetrievalResult`` (the loop's weak-support path handles it).
+    - Empty ``principal_groups`` (fail-closed) → empty ``RetrievalResult`` (no leak).
+    - Pre-filter / post-filter drops all → empty ``RetrievalResult`` (the
+      loop's weak-support path handles it).
 
     Attributes:
         store: The AgeGraphStore (read-only on the hot path).
-        chunk_repo: A repository exposing ``get_by_str_ids(chunk_ids) -> list[dict]``.
+        chunk_repo: A repository exposing
+            ``get_by_str_ids(chunk_ids, principal_groups) -> list[dict]``.
+            The ``principal_groups`` argument is the **enforcement boundary**:
+            the repo must filter at the SQL boundary so no unreadable row is
+            ever returned to Python (F-00097, Option A).
         cfg: GraphRetrieverConfig controlling defaults, timeouts, and ACL behaviour.
     """
 
@@ -168,8 +207,9 @@ class GraphRetriever:
             store: AgeGraphStore (or a test fake) with ``query_subgraph`` and
                 ``resolve_to_chunks`` async methods.
             chunk_repo: A repository (or test fake) with ``get_by_str_ids`` that
-                accepts a list of chunk_id strings and returns a list of chunk
-                row dicts.
+                accepts a list of chunk_id strings AND a ``principal_groups``
+                sequence, and applies the ACL pre-filter at the SQL boundary
+                so no unreadable row is returned (F-00097, Option A).
             cfg: Optional retriever configuration.  Defaults to ``GraphRetrieverConfig()``.
         """
         self.store = store
@@ -287,12 +327,26 @@ class GraphRetriever:
             (degrade, never 500); the router node falls back to the spine.
 
         Note:
-            ACL post-filter drops chunks whose ``acl_tags`` do not overlap
-            ``access.principal_groups`` before any chunk reaches the generator.
-            The model NEVER sees a dropped chunk's content.
+            F-00097 (Option A — SQL-boundary pre-filter):
+            ``principal_groups`` is taken from the authenticated
+            ``AccessContext`` (never from the query string or any request
+            field — lld-guardrails §3.1) and threaded into
+            ``chunk_repo.get_by_str_ids``.  The fetch SQL emits
+            ``WHERE acl_tags && :principal_groups`` (GIN-accelerated by
+            ``chunks_acl_gin``) so no unreadable chunk row is ever fetched,
+            ranked, or fed to the generator.  An empty ``principal_groups``
+            short-circuits to an empty result (fail-closed; no unfiltered
+            query is issued).  The per-chunk ``_acl_postfilter`` is
+            defense-in-depth: on correctly pre-filtered data it is a no-op;
+            a drop emits a ``logging.WARNING`` identifying the chunk id
+            (pre-filter defect signal).
         """
         effective_top_k = top_k if top_k is not None else self.cfg.top_k
         effective_mode = self._determine_mode(mode)
+        # ACL input: principal_groups come ONLY from the authenticated
+        # AccessContext (never from query text, graph content, or model
+        # output — lld-guardrails §3.1).  Computed once and reused for the
+        # pre-filter (Step 4) and the defense-in-depth post-filter (Step 5).
         principal_groups = list(access.principal_groups)
 
         def _empty_result(reason: str = "") -> RetrievalResult:
@@ -383,10 +437,28 @@ class GraphRetriever:
             return _empty_result("no_chunks_resolved")
 
         # ----------------------------------------------------------------
-        # Step 4: Fetch chunk rows from the repository
+        # Step 4: Fetch chunk rows from the repository (ACL PRE-FILTERED at SQL)
+        #
+        # F-00097 (Option A): the fetch SQL emits
+        # `WHERE c.id = ANY(:ids) AND acl_tags && :principal_groups`
+        # (GIN-accelerated by `chunks_acl_gin`).  `principal_groups` is
+        # taken from the authenticated AccessContext (never from query
+        # text).  An empty `principal_groups` short-circuits inside the
+        # adapter to `[]` (mirrors `AclPredicate.is_empty` — fail-closed,
+        # no unfiltered query is issued).
         # ----------------------------------------------------------------
+        if not principal_groups:
+            _log.debug(
+                "GraphRetriever: empty principal_groups for query %r → "
+                "empty result (fail-closed, no fetch issued)",
+                query[:80],
+            )
+            return _empty_result("empty_principal_groups")
+
         try:
-            chunk_rows = await self.chunk_repo.get_by_str_ids(chunk_id_strs)
+            chunk_rows = await self.chunk_repo.get_by_str_ids(
+                chunk_id_strs, principal_groups=principal_groups
+            )
         except Exception as exc:
             _log.warning("GraphRetriever: get_by_str_ids failed: %s — returning empty result", exc)
             return _empty_result("chunk_fetch_error")
@@ -394,8 +466,14 @@ class GraphRetriever:
         candidate_count = len(chunk_rows)
 
         # ----------------------------------------------------------------
-        # Step 5: ACL post-filter
-        # Drop chunks whose acl_tags do not overlap principal_groups.
+        # Step 5: ACL post-filter (defense-in-depth).
+        #
+        # The SQL pre-filter in Step 4 is the enforcement seam.  This
+        # secondary check is a no-op on correctly pre-filtered data.  If
+        # it ever drops a chunk, that signals a pre-filter defect — emit a
+        # `logging.WARNING` (F-00097, AC3 / Invariant 6) so the defect
+        # surfaces in operations.  It must never be the sole enforcement
+        # seam.
         # ----------------------------------------------------------------
         visible: list[dict[str, Any]] = []
         for row in chunk_rows:
@@ -403,9 +481,9 @@ class GraphRetriever:
             if _acl_postfilter(row_acl, principal_groups):
                 visible.append(row)
             else:
-                _log.debug(
-                    "GraphRetriever: ACL post-filter dropped chunk_id=%r "
-                    "(acl_tags=%r ∩ principal_groups=%r = ∅)",
+                _log.warning(
+                    "GraphRetriever: post-filter dropped chunk_id=%r — "
+                    "pre-filter defect (chunk acl_tags=%r ∩ principal_groups=%r = ∅)",
                     row.get("chunk_id"),
                     row_acl,
                     principal_groups,

@@ -38,6 +38,7 @@ from iw_rag.eval.experiments import run_experiment_6_graphrag
 from iw_rag.eval.repository import EvalRepository, GoldenQuery
 from iw_rag.modes.graphrag.retriever import GraphRetriever
 from iw_rag.modes.graphrag.store import AgeGraphStore
+from iw_rag.retrieval.acl_filter import AclPredicate
 from iw_rag.retrieval.dense import DenseRetriever
 from iw_rag.retrieval.encode import InfinityQueryEncoder
 from iw_rag.retrieval.rerank import InfinityReranker
@@ -50,17 +51,73 @@ _GOLDEN = Path(__file__).resolve().parent.parent / "eval" / "golden" / "graphrag
 
 
 class _StrChunkRepo:
-    """Adapter: get_by_str_ids(list[str]) → chunk rows shaped for the graph retriever.
+    """Adapter: get_by_str_ids → chunk rows shaped for the graph retriever.
+
+    Accepts ``(ids, principal_groups)`` and applies the ACL pre-filter at the
+    SQL boundary (F-00097, Option A).  See the class docstring below for
+    the full contract.
 
     The retriever's ``_adapt_graph_chunk`` reads ``chunk_id`` / ``content`` /
     ``source_uri`` / ``acl_tags``; ``ChunkRepository.get_by_ids`` keys on uuid and
     returns ``id`` (no source_uri), so resolve the shape directly here.
+
+    F-00097 (Option A — SQL-boundary pre-filter):
+    The fetch SQL applies the ACL pre-filter at the SQL boundary via
+    ``acl_tags && :principal_groups`` (GIN-accelerated by the existing
+    ``chunks_acl_gin`` index, matches the spine's pre-filter invariant).
+    No row outside the principal's ACL is ever fetched, ranked, or fed to
+    the generator.  ``principal_groups`` is sourced solely from the
+    authenticated ``AccessContext`` and is never derived from the query
+    text, the graph content, or the model output (lld-guardrails §3.1).
+
+    Empty-``acl_tags`` semantics: a chunk with ``acl_tags = []`` is invisible
+    to every principal — the SQL ``[] && :principal_groups`` is false for
+    any non-empty ``principal_groups`` and false for an empty one too
+    (fail-closed).  This matches the ingestion contract in
+    :mod:`iw_rag.ingestion.enrich` ("an empty resolver result yields
+    ``acl_tags = []`` → the document is invisible to every principal; fail-
+    closed, never world-readable") and the spine's pre-filter.  There is no
+    special-case for ``[]`` — broadly-readable documents carry an explicit
+    shared tag (e.g. ``"public"``) that principals also hold.
     """
 
     def __init__(self, db: Database) -> None:
         self._db = db
 
-    async def get_by_str_ids(self, ids: Sequence[str]) -> list[dict[str, Any]]:
+    async def get_by_str_ids(
+        self,
+        ids: Sequence[str],
+        principal_groups: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        """Fetch chunk rows by id, ACL-pre-filtered at the SQL boundary.
+
+        The SQL emits ``WHERE c.id = ANY(:ids) AND acl_tags && :principal_groups``,
+        bound to the supplied ``principal_groups``.  An empty
+        ``principal_groups`` short-circuits to ``[]`` (fail-closed) and never
+        issues an unfiltered query — mirrors
+        :class:`~iw_rag.retrieval.acl_filter.AclPredicate.is_empty`.
+
+        Args:
+            ids: Chunk-id strings to resolve (non-UUID entries are silently
+                dropped — only valid UUIDs are queried).
+            principal_groups: The authenticated caller's ACL groups (from
+                ``AccessContext``, never from query text or model output).
+                An empty list is fail-closed: returns ``[]`` without issuing
+                an unfiltered query.
+
+        Returns:
+            List of chunk row dicts shaped for ``GraphRetriever._adapt_graph_chunk``:
+            ``chunk_id``, ``content``, ``source_uri``, ``acl_tags``.  Empty
+            when ``principal_groups`` is empty or none of the requested ids
+            are readable.
+        """
+        # Fail-closed short-circuit: an empty principal_groups means the
+        # principal sees nothing (mirrors AclPredicate.is_empty).  Never
+        # issue an unfiltered query.
+        acl = AclPredicate(principal_groups=tuple(principal_groups))
+        if acl.is_empty:
+            return []
+
         uuids: list[uuid.UUID] = []
         for s in ids:
             try:
@@ -69,13 +126,15 @@ class _StrChunkRepo:
                 continue
         if not uuids:
             return []
+        # Reuse the spine's AclPredicate so the pre-filter SQL is textually
+        # identical to `acl_tags && :principal_groups` (Invariant 5).
         sql = text(
-            "SELECT c.id, c.content, c.acl_tags, d.source_uri "
-            "FROM iw_rag.chunks c JOIN iw_rag.documents d ON d.id = c.document_id "
-            "WHERE c.id = ANY(:ids)"
+            f"SELECT c.id, c.content, c.acl_tags, d.source_uri "
+            f"FROM iw_rag.chunks c JOIN iw_rag.documents d ON d.id = c.document_id "
+            f"WHERE c.id = ANY(:ids) AND {acl.sql_clause()}"
         )
         async with self._db.session() as session:
-            rows = await session.execute(sql, {"ids": uuids})
+            rows = await session.execute(sql, {"ids": uuids, **acl.params()})
             return [
                 {
                     "chunk_id": str(r["id"]),

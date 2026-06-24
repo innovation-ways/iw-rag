@@ -262,8 +262,22 @@ async def test_graphrag_query_returns_correct_chunks_with_age(
         },
     }
 
-    async def _get_by_str_ids(chunk_ids: list[str]) -> list[dict[str, Any]]:
-        return [chunk_db[cid] for cid in chunk_ids if cid in chunk_db]
+    async def _get_by_str_ids(
+        chunk_ids: list[str],
+        principal_groups: list[str] | tuple[str, ...] = (),
+    ) -> list[dict[str, Any]]:
+        # Mirror the production `_StrChunkRepo.get_by_str_ids` contract
+        # (F-00097, Option A): apply the SQL pre-filter at the boundary so
+        # no unreadable row is returned to Python.  An empty principal_groups
+        # is fail-closed and yields [].
+        if not principal_groups:
+            return []
+        pg_set = set(principal_groups)
+        return [
+            chunk_db[cid]
+            for cid in chunk_ids
+            if cid in chunk_db and bool(set(chunk_db[cid].get("acl_tags") or []) & pg_set)
+        ]
 
     fake_chunk_repo = MagicMock()
     fake_chunk_repo.get_by_str_ids = AsyncMock(side_effect=_get_by_str_ids)
