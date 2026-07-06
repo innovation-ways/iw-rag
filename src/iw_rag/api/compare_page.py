@@ -119,6 +119,17 @@ _PAGE = r"""<!doctype html>
   /* ---- Compare-specific ---- */
   .pick-table td, .pick-table th { vertical-align: middle; }
   .pick-table td.c { text-align: center; width: 36px; }
+  /* ---- Runs picker: sortable headers (every data column) ---- */
+  .pick-table th.sortable { cursor: pointer; -webkit-user-select: none; user-select: none; }
+  .pick-table th.sortable:hover { color: var(--teal); }
+  .pick-table th.sortable .sort-ind { display: inline-block; width: 12px; margin-left: 4px; color: var(--teal); font-size: 10px; }
+  .pick-table th.sortable:not(.asc):not(.desc) .sort-ind { color: var(--muted); opacity: .55; }
+  /* ---- Runs picker: pagination bar (fixed 20 rows / page) ---- */
+  .pick-pager { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 14px; font-size: 13px; }
+  .pick-page-info { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pick-pager button { padding: 6px 10px; font-size: 12px; }
+  .pick-pager button:disabled { opacity: .4; cursor: not-allowed; }
+  .pick-pager button:disabled:hover { border-color: var(--line); }
   .runchip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--ink-2); margin: 0 8px 8px 0; font-size: 13px; }
   .runchip .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
   .runchip .bl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #06231f; background: var(--teal); border-radius: 4px; padding: 1px 5px; font-weight: 700; }
@@ -287,6 +298,23 @@ _PAGE = r"""<!doctype html>
   var REPORTS = [];        // the GET /benchmark/reports rows
   var selected = [];       // selected ids, in selection order
   var MAX_RUNS = 5;
+  // ---- runs table: client-side sort + pagination (S01) ----------------------
+  var PAGE_SIZE = 20;          // fixed 20 rows per page
+  var sortKey = "created_at";  // default sort column
+  var sortDir = "desc";        // default sort direction (newest first)
+  var page = 1;                // 1-indexed current page
+  var DEFAULT_DIR = {          // default direction when first activating a column
+    run: "asc",
+    dataset: "asc",
+    config: "asc",
+    created_at: "desc"
+  };
+  var PICK_COLS = [            // ordered (sort_key, label) pairs for the runs picker header
+    { key: "run",        label: "Run" },
+    { key: "dataset",    label: "Dataset" },
+    { key: "config",     label: "Configuration" },
+    { key: "created_at", label: "Created" }
+  ];
 
   function reportById(id) {
     for (var i = 0; i < REPORTS.length; i++) { if (REPORTS[i].id === id) return REPORTS[i]; }
@@ -320,14 +348,138 @@ _PAGE = r"""<!doctype html>
     }
   }
 
+  /**
+   * Return a sorted copy of REPORTS using the current sortKey / sortDir.
+   * Sort is applied across the FULL report set before any pagination
+   * slicing (so changing page never changes the row order).
+   *
+   * Performance: the per-row sort key is pre-computed once (the config
+   * key in particular calls modsSummary(), which would otherwise be
+   * invoked 2× per comparison — O(n² × cost(modsSummary))).  After the
+   * precompute the comparator is O(1) per call (S04 polish).
+   *
+   * @returns {Array<Object>} Sorted copy of REPORTS.
+   */
+  function sortedReports() {
+    var dir = sortDir === "asc" ? 1 : -1;
+    var rows = new Array(REPORTS.length);
+    for (var i = 0; i < REPORTS.length; i++) {
+      var r = REPORTS[i];
+      var k = "";
+      switch (sortKey) {
+        case "run":
+          k = String(r.display_id || ("#" + ((r.id || "").slice(0, 8)))).toLowerCase();
+          break;
+        case "dataset":
+          k = String(r.dataset_name || r.dataset_id || "").toLowerCase();
+          break;
+        case "config":
+          // modsSummary memoized once per row here (instead of being
+          // recomputed on every a/b comparison — see the docstring above).
+          k = modsSummary(r).toLowerCase();
+          break;
+        case "created_at": {
+          var t = Date.parse(r.created_at);
+          // "_t:<n>" marks a parseable timestamp (numeric compare in the
+          // comparator); raw String(r.created_at || "") is used for invalid
+          // timestamps so the string-fallback path matches the original
+          // localeCompare-on-raw-strings semantics.
+          k = isNaN(t) ? String(r.created_at || "") : "_t:" + t;
+          break;
+        }
+      }
+      rows[i] = { rep: r, key: k };
+    }
+    rows.sort(function (a, b) {
+      // created_at: numeric compare when both keys carry a parseable
+      // timestamp; otherwise fall back to string compare (matches the
+      // original String(created_at || "").localeCompare behaviour).
+      if (sortKey === "created_at") {
+        if (a.key.indexOf("_t:") === 0 && b.key.indexOf("_t:") === 0) {
+          return dir * (Number(a.key.slice(3)) - Number(b.key.slice(3)));
+        }
+      }
+      return dir * a.key.localeCompare(b.key);
+    });
+    var out = new Array(rows.length);
+    for (var j = 0; j < rows.length; j++) { out[j] = rows[j].rep; }
+    return out;
+  }
+
+  /** Sort indicator glyph for the given column key (▾ default, ▲ asc, ▼ desc).
+   *  Requires the source file to be UTF-8 encoded (the Python source emits
+   *  these Unicode glyphs as literals — keep `fileencoding=utf-8` in
+   *  pyproject.toml so the bytes round-trip through the build). */
+  function sortInd(key) {
+    if (key !== sortKey) { return "▾"; }
+    return sortDir === "asc" ? "▲" : "▼";
+  }
+
+  /**
+   * Switch to the given sort column; toggle direction if already active.
+   * Always resets pagination to page 1 so the user sees the top of the
+   * freshly-sorted set first.
+   *
+   * @param {string} key - The sort key (run, dataset, config, created_at).
+   */
+  function setSort(key) {
+    if (sortKey === key) {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+    } else {
+      sortKey = key;
+      sortDir = DEFAULT_DIR[key] || "asc";
+    }
+    page = 1;
+    renderPicker();
+  }
+
+  /**
+   * Build the pagination bar markup for the runs picker.  Returns an empty
+   * string when the row count is at or below PAGE_SIZE (no pager needed).
+   *
+   * @param {number} total - The total row count across all pages.
+   * @returns {string} HTML string (may be empty).
+   */
+  function renderPickerPager(total) {
+    if (total <= PAGE_SIZE) { return ''; }
+    var totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    var from = (page - 1) * PAGE_SIZE + 1;
+    var to = Math.min(page * PAGE_SIZE, total);
+    return '<div class="pick-pager">' +
+      '<span class="pick-page-info">Page ' + page + ' of ' + totalPages + ' &middot; ' + from + '&ndash;' + to + ' of ' + total + '</span>' +
+      '<button type="button" id="pickPrev">&#8249; Prev</button>' +
+      '<button type="button" id="pickNext">Next &#8250;</button>' +
+      '</div>';
+  }
+
   function renderPicker() {
+    // Sort the full REPORTS list first, then slice to the current page
+    // (sort runs across the whole set — never just the visible page).
+    var sorted = sortedReports();
+    var total = sorted.length;
+    var totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (page < 1) { page = 1; }
+    if (page > totalPages) { page = totalPages; }
+    var start = (page - 1) * PAGE_SIZE;
+    var slice = sorted.slice(start, start + PAGE_SIZE);
+
+    // Build the sortable <thead>: every data column gets a .sortable th
+    // with a data-sort key + a sort indicator glyph.
+    var headCells = '<th class="c">pick</th>';
+    PICK_COLS.forEach(function (c) {
+      var cls = "sortable" + (sortKey === c.key ? " " + sortDir : "");
+      headCells += '<th class="' + cls + '" data-sort="' + c.key + '">' + c.label +
+        '<span class="sort-ind">' + sortInd(c.key) + '</span></th>';
+    });
+
     var html = '<div class="hm-scroll"><table class="pick-table"><thead><tr>' +
-      '<th class="c">pick</th><th>Run</th><th>Dataset</th><th>Configuration</th><th>Created</th></tr></thead><tbody>';
-    REPORTS.forEach(function (rep) {
+      headCells + '</tr></thead><tbody>';
+    slice.forEach(function (rep) {
       var ds = rep.dataset_name || rep.dataset_id || "—";
       var runId = rep.display_id || ("#" + (rep.id || "").slice(0, 8));
+      var sel = selected.indexOf(rep.id) !== -1;
       html += '<tr>' +
-        '<td class="c"><input type="checkbox" class="pickbox" data-id="' + esc(rep.id) + '" data-ds="' + esc(rep.dataset_id || "") + '" /></td>' +
+        '<td class="c"><input type="checkbox" class="pickbox" data-id="' + esc(rep.id) + '" data-ds="' + esc(rep.dataset_id || "") + '"' + (sel ? ' checked' : '') + ' /></td>' +
         '<td><span style="font-family:JetBrains Mono,monospace">' + esc(runId) + '</span></td>' +
         '<td>' + esc(ds) + '</td>' +
         '<td><span class="mods" style="font-size:11px;color:var(--muted)">' + esc(modsSummary(rep)) + '</span></td>' +
@@ -335,9 +487,31 @@ _PAGE = r"""<!doctype html>
         '</tr>';
     });
     html += '</tbody></table></div>';
+    html += renderPickerPager(total);
     $("pickBody").innerHTML = html;
+
+    // Wire up the per-row checkbox change handler (restore checked state
+    // above so this only fires on user-initiated clicks).
     var boxes = document.querySelectorAll(".pickbox");
     boxes.forEach(function (b) { b.addEventListener("change", onPick); });
+
+    // Wire up the sortable header click handlers.
+    var ths = document.querySelectorAll(".pick-table th.sortable");
+    ths.forEach(function (th) {
+      th.addEventListener("click", function () { setSort(th.getAttribute("data-sort")); });
+    });
+
+    // Wire up the pager buttons (only present when the picker overflows one page).
+    var prev = $("pickPrev"), next = $("pickNext");
+    if (prev) {
+      prev.disabled = page <= 1;
+      prev.addEventListener("click", function () { if (page > 1) { page--; renderPicker(); } });
+    }
+    if (next) {
+      next.disabled = page >= totalPages;
+      next.addEventListener("click", function () { if (page < totalPages) { page++; renderPicker(); } });
+    }
+
     syncPickerState();
   }
 
