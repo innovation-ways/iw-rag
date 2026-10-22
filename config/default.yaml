@@ -173,6 +173,61 @@ serving:
   health_timeout_s: 300                              # matches llama-swap.yaml healthCheckTimeout
   activation_group: eval-operator
 
+# System power-control (VRAM power switch).  The system-control sidecar owns
+# the Docker socket and stops/starts the VRAM-holding containers; the API
+# proxies to it, runs the idle-unload monitor, and blocks-and-warms the first
+# query after an auto-unload.  base_url/docker_socket are internal-only (the
+# sidecar holds the socket and is NEVER published to the host).  power_group is
+# read from auth only (AccessContext.principal_groups), never the request body.
+power:
+  enabled: true
+  base_url: http://system-control:8091   # internal Compose network only (holds the docker socket)
+  power_group: eval-operator             # ACL group required to flip the switch (auth-only keystone)
+  idle_unload_enabled: true
+  idle_unload_minutes: 15                # auto-unload idle_unload components after 15 min idle
+  ready_timeout_s: 300                   # cold-start readiness budget after a power-on
+  poll_interval_s: 1.0
+  block_and_warm: true                   # first query after auto-unload powers the generator back on + waits
+  vram_ceiling_gb: 32.0                  # single RTX 5090 — console gauge full-scale
+  mode_switch_enabled: true              # allow the System view to toggle serving <-> benchmark
+  components:
+    generator:
+      # Serving pins iw-rag-vllm-1; benchmark's generator is llama-swap's dynamic
+      # vllm-<served-name>. The vendor-family patterns match every generator
+      # llama-swap can spawn WITHOUT matching the judges (vllm-judge-*) or other
+      # projects. Override here if a non-iw-rag container shares a vendor prefix.
+      containers: ["iw-rag-vllm-1", "vllm-qwen*", "vllm-llama*", "vllm-hermes*", "vllm-mistral*"]
+      label: "Generator (LLM)"
+      description: "The vLLM generator — the dominant VRAM consumer (~10-18 GB)."
+      idle_unload: true
+    embedder:
+      containers: ["iw-rag-infinity-1"]
+      label: "Embedder + reranker"
+      description: "Infinity BGE-M3 embedder + reranker (~4 GB). Needed for retrieval."
+      idle_unload: false
+    judges:
+      containers: ["vllm-judge-lynx", "vllm-judge-selene"]
+      label: "Benchmark judges"
+      description: "Lynx + Selene judges (benchmark scoring only; ~16-18 GB when resident)."
+      idle_unload: false
+    guards:
+      containers: ["iw-rag-vllm-guard", "injguard"]
+      label: "Guard models"
+      description: "Input/injection guard sidecars (~1-2 GB). Present only when guards-on."
+      idle_unload: false
+  # Mode-switch plans — the in-UI equivalent of make serving-mode / benchmark-mode.
+  modes:
+    serving:
+      start: ["iw-rag-vllm-1", "iw-rag-vllm-guard", "injguard"]
+      stop: ["iw-rag-llama-swap-1", "iw-rag-swap-controller-1"]
+      generator_endpoint: http://vllm:8001/v1
+      guards: true
+    benchmark:
+      start: ["iw-rag-llama-swap-1", "iw-rag-swap-controller-1"]
+      stop: ["iw-rag-vllm-1", "iw-rag-vllm-guard", "injguard"]
+      generator_endpoint: http://llama-swap:8080/v1
+      guards: false
+
 eval:
   ci:
     deepeval_fail_on_regression: true           # false → regression downgrades to warning only

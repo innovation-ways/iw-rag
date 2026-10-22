@@ -162,6 +162,7 @@ _PAGE = r"""<!doctype html>
   <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
   <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
   <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
+  <a class="nav-item" id="navSystem" href="/console/system">System</a>
 </nav>
 
 <main>

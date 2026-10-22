@@ -181,6 +181,75 @@ def _build_query_service(settings: Settings) -> tuple[Any, Any, Any]:
     return AgentQueryService(spine=spine, assembler=assembler, graph=graph), database, llm
 
 
+def rebuild_query_service_generator(app: FastAPI, generator_endpoint: str) -> None:
+    """Re-point the live query service's generator at ``generator_endpoint``.
+
+    The in-process half of a mode switch (the container half is the sidecar's
+    ``orchestrate``): swap serving (``vllm:8001``) ↔ benchmark (``llama-swap``)
+    without recreating the api container.  Reuses the EXISTING retrieval spine
+    (it holds the DB pool + the mode-independent Infinity embedder/reranker), so
+    only the generator-dependent parts — the vLLM client, the answer assembler,
+    and the compiled graph — are rebuilt.  No new DB pool is opened.
+
+    Best-effort: if the query service lacks the ``_spine`` seam (a stub wiring
+    in tests) the call is a no-op.
+
+    Args:
+        app: The FastAPI app (for ``app.state``).
+        generator_endpoint: The generator endpoint to rebuild onto.
+    """
+    settings: Settings | None = getattr(app.state, "settings", None)
+    qs = getattr(app.state, "query_service", None)
+    spine = getattr(qs, "_spine", None)
+    if settings is None or qs is None or spine is None:
+        return
+
+    from iw_rag.agent.checkpoint import make_checkpointer
+    from iw_rag.agent.graph import build_graph
+    from iw_rag.api.service import AgentQueryService
+    from iw_rag.generation.answer import AnswerAssembler
+    from iw_rag.generation.context_budget import ContextBudget
+    from iw_rag.generation.llm import GenerationParams, VllmClient
+    from iw_rag.generation.prompts import CitationPrompt
+
+    generator = settings.models.get(settings.generation.model)
+    llm = VllmClient(generator_endpoint, enable_thinking=settings.generation.enable_thinking)
+    generation_budget = ContextBudget(
+        max_model_len=settings.generation.max_model_len,
+        reserved_output_tokens=settings.generation.max_tokens,
+        headroom_tokens=settings.generation.context_headroom_tokens,
+    )
+    assembler = AnswerAssembler(
+        llm=llm,
+        prompt=CitationPrompt(budget=generation_budget),
+        params=GenerationParams(
+            model=generator.served_name,
+            temperature=settings.generation.temperature,
+            max_tokens=settings.generation.max_tokens,
+        ),
+        cite_required=settings.generation.cite_required,
+    )
+    agent_settings = settings.agent
+    try:
+        grader_served = settings.models.get(settings.agent.grader_model).served_name
+        agent_settings = settings.agent.model_copy(update={"grader_model": grader_served})
+    except (KeyError, AttributeError):
+        pass
+    checkpointer = make_checkpointer(settings.agent, dsn=settings.database.dsn)
+    graph = build_graph(
+        spine,
+        assembler,
+        llm,
+        settings=agent_settings,
+        checkpointer=checkpointer,
+        parent_expansion_max_chars=settings.retrieval.parent_expansion_max_chars,
+        generation_max_model_len=settings.generation.max_model_len,
+        context_headroom_tokens=settings.generation.context_headroom_tokens,
+    )
+    app.state.query_service = AgentQueryService(spine=spine, assembler=assembler, graph=graph)
+    app.state.llm = llm
+
+
 def _build_document_service(settings: Settings, database: Any) -> Any:
     """Build the DocumentService from settings + an existing Database handle.
 
@@ -226,6 +295,31 @@ def _build_swap_controller_client(settings: Settings) -> Any:
     )
 
 
+def _build_power_client(settings: Settings) -> Any | None:
+    """Build the system-control HTTP client from settings (VRAM power switch).
+
+    Returns ``None`` when power control is disabled (``Settings.power.enabled``
+    is false) so the System view degrades and the idle monitor never starts.
+    The main API holds NO Docker socket — this client is the only seam to the
+    privileged ``system-control`` sidecar.
+
+    Args:
+        settings: The validated ``Settings`` instance.
+
+    Returns:
+        A :class:`~iw_rag.serving.power_client.PowerClient`, or ``None`` when
+        the feature is disabled.
+    """
+    if not settings.power.enabled:
+        return None
+    from iw_rag.serving.power_client import PowerClient
+
+    # Comfortably above a real cold vLLM load so a block-and-warm power-on is
+    # held open for the full readiness wait rather than timing out mid-load.
+    timeout_s = float(max(settings.power.ready_timeout_s, settings.serving.health_timeout_s)) + 60.0
+    return PowerClient(base_url=settings.power.base_url, timeout_s=timeout_s)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -236,6 +330,7 @@ def create_app(
     document_service: Any | None = None,
     conversation_service: Any | None = None,
     swap_controller_client: Any | None = None,
+    power_client: Any | None = None,
     benchmark_runner: Any | None = None,
     benchmark_service: Any | None = None,
     config_service: Any | None = None,
@@ -300,6 +395,12 @@ def create_app(
     if swap_controller_client is None:
         assert settings is not None
         swap_controller_client = _build_swap_controller_client(settings)
+    # VRAM power switch (system-control): build the proxy client unless a test
+    # injected one.  When settings are unavailable (slim test wirings) or the
+    # feature is disabled, ``power_client`` stays ``None`` and the System view
+    # degrades + the idle monitor never starts.
+    if power_client is None and settings is not None:
+        power_client = _build_power_client(settings)
 
     # Configure OTel/Phoenix export (idempotent; no-ops when the endpoint is
     # unset or the observability deps are absent). Without this call the loop's
@@ -326,6 +427,14 @@ def create_app(
         conversation_service = ConversationService(database)
     app.state.conversation_service = conversation_service
     app.state.swap_controller_client = swap_controller_client
+    # VRAM power switch — the proxy client to the system-control sidecar (or
+    # None when disabled) + the activity tracker the idle monitor reads.  The
+    # idle monitor task itself is started in a startup hook below (it needs a
+    # running event loop).
+    from iw_rag.api.system_power import PowerActivityTracker
+
+    app.state.power_client = power_client
+    app.state.power_activity = PowerActivityTracker()
     # F-00095 / S02 — Benchmark Studio composition root.  Both
     # ``benchmark_runner`` (S01) and ``benchmark_service`` (F-00093) remain
     # **injectable** so tests can wire fakes.  The live ``benchmark_service``
@@ -436,11 +545,32 @@ def create_app(
     from iw_rag.api.documents_routes import documents_router
     from iw_rag.api.models_routes import models_router
     from iw_rag.api.scoreboard_routes import scoreboard_router
+    from iw_rag.api.system_routes import system_router
 
     app.include_router(documents_router)
     app.include_router(models_router)
     app.include_router(benchmark_router)
     app.include_router(config_router)
     app.include_router(scoreboard_router)
+    app.include_router(system_router)
     app.include_router(console_router)
+
+    # Start the idle auto-unload monitor once an event loop is running.  No-op
+    # when power control is disabled / unwired (the monitor returns early).
+    @app.on_event("startup")
+    async def _start_power_idle_monitor() -> None:  # pragma: no cover - needs a live loop
+        if getattr(app.state, "power_client", None) is None:
+            return
+        import asyncio
+
+        from iw_rag.api.system_power import power_idle_monitor
+
+        app.state.power_idle_task = asyncio.create_task(power_idle_monitor(app))
+
+    @app.on_event("shutdown")
+    async def _stop_power_idle_monitor() -> None:  # pragma: no cover - needs a live loop
+        task = getattr(app.state, "power_idle_task", None)
+        if task is not None:
+            task.cancel()
+
     return app

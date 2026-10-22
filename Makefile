@@ -12,7 +12,7 @@ COMPOSE := docker compose --project-directory . -f docker/compose.yaml -f docker
 GUARDS_OVERLAY := $(wildcard docker/compose.guards.yaml)
 DEPLOY_COMPOSE := $(COMPOSE) $(if $(GUARDS_OVERLAY),-f docker/compose.guards.yaml)
 
-.PHONY: up down spike lint type test cov check-assertions config ingest eval eval-ci db-migrate migration-pending api-deploy api-dev benchmark-mode serving-mode visual-up visual-down visual-validate
+.PHONY: up down spike lint type test cov check-assertions config ingest eval eval-ci db-migrate migration-pending api-deploy api-dev benchmark-mode serving-mode system-control visual-up visual-down visual-validate
 
 # Dev hot-reload overlay (docker/compose.dev.yaml) on top of the deploy stack:
 # bind-mounts host ./src over the baked /app/src and runs uvicorn --reload, so
@@ -73,7 +73,15 @@ serving-mode:      ## switch the box back to normal serving (chat/query, guards 
 	@until [ "$$(docker inspect -f '{{.State.Health.Status}}' iw-rag-vllm-1 2>/dev/null)" = "healthy" ]; do sleep 5; done
 	-docker start iw-rag-vllm-guard injguard
 	$(DEPLOY_COMPOSE) up -d --no-build --no-deps --force-recreate api
+	$(DEPLOY_COMPOSE) up -d --no-build --no-deps system-control
 	@echo "+ serving mode active - chat/query restored (guards on)."
+
+# Power switch sidecar (System view): the privileged, internal-only
+# system-control container that owns the docker socket + NVML.  Recreate it on
+# its own after an image rebuild (`make api-deploy` rebuilds iw-rag-api, then
+# this picks up the new power_app code).  Always-on in both modes.
+system-control:    ## (re)deploy ONLY the VRAM power-switch sidecar
+	$(DEPLOY_COMPOSE) up -d --no-build --no-deps --force-recreate system-control
 
 visual-up:         ## (GPU window) start the Qwen2.5-VL caption server (visual mode)
 	$(VLM_COMPOSE) up -d vlm-caption

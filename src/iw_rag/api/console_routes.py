@@ -30,6 +30,7 @@ from iw_rag.api.console_page import console_page_html
 from iw_rag.api.console_upload_page import console_upload_page_html
 from iw_rag.api.results_page import results_page_html
 from iw_rag.api.scoreboard_page import scoreboard_page_html
+from iw_rag.api.system_page import system_page_html
 
 console_router = APIRouter()
 
@@ -179,6 +180,25 @@ async def console_upload_ui() -> HTMLResponse:
     The per-user document ACL is enforced server-side (WI-DOCMGMT, Invariant 4).
     """
     return HTMLResponse(content=console_upload_page_html())
+
+
+@console_router.get("/console/system", response_class=HTMLResponse, include_in_schema=False)
+async def console_system_ui() -> HTMLResponse:
+    """Serve the System / Management view page (VRAM power switch).
+
+    The System page owns the body — the live VRAM gauge (polled every
+    2 s from ``GET /system/vram``), the mode banner (amber when
+    benchmark mode or ``power_control_active`` is ``False``), the
+    master ON/OFF power switch (``POST /system/power`` with
+    ``{action, components:null}``), the per-component advanced
+    expander with per-row start/stop buttons (``POST /system/power``
+    with ``{action, components:[key]}``), the idle-unload / block-and-
+    warm info line, and the 403 / degraded / sidecar-unreachable
+    states.  All power-control and VRAM math stays server-side
+    (Invariant 4).  The page is a thin API client: it never enforces
+    ACL, VRAM budgeting, or component ordering locally.
+    """
+    return HTMLResponse(content=system_page_html())
 
 
 __all__ = ["console_router"]

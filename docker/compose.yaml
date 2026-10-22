@@ -126,6 +126,49 @@ services:
     expose:
       - "8000"
 
+  # --- system-control: VRAM power switch sidecar (privileged, internal-only) ---
+  # The ONLY process that mounts the host Docker socket + reads NVML.  It owns
+  # the PowerController (start/stop the VRAM-holding containers) and the live
+  # VRAM gauge; the main API proxies to it (settings.power.base_url) and never
+  # touches the socket.  Always-on in BOTH serving and benchmark mode so the
+  # console System view always answers — but the API interlock refuses power
+  # flips in benchmark mode (llama-swap owns the GPU there).
+  #
+  # Shares the baked api image (same CPU runtime; only deps are httpx + pynvml,
+  # both already in the image).  NOT published to the host: holding the Docker
+  # socket is host-root-equivalent, so internal-network reachability IS the
+  # security boundary (mirrors llama-swap).  The GPU reservation (for NVML
+  # VRAM read only — allocates no VRAM) lives in compose.gpu.yaml.
+  system-control:
+    image: iw-rag-api
+    command:
+      - uv
+      - run
+      - --no-dev
+      - uvicorn
+      - iw_rag.serving.power_app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8091"
+    volumes:
+      # Read-write: the sidecar issues docker start/stop over this socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Settings() requires the DSN + model endpoints to construct (the sidecar
+      # never calls them; the power section is read from the baked default.yaml).
+      IW_RAG__DATABASE__DSN: >-
+        postgresql+psycopg://${POSTGRES_USER:-iw_rag}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-iw_rag}
+      IW_RAG__MODELS__GENERATOR__ENDPOINT: ${IW_RAG__MODELS__GENERATOR__ENDPOINT:-http://vllm:8001/v1}
+      IW_RAG__MODELS__EMBEDDER__ENDPOINT: ${IW_RAG__MODELS__EMBEDDER__ENDPOINT:-http://infinity:7997}
+      IW_RAG__MODELS__RERANKER__ENDPOINT: ${IW_RAG__MODELS__RERANKER__ENDPOINT:-http://infinity:7997}
+      IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT: ${IW_RAG__MODELS__JUDGE_FAITHFULNESS__ENDPOINT:-http://localhost:8002/v1}
+      IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT: ${IW_RAG__MODELS__JUDGE_GENERAL__ENDPOINT:-http://localhost:8002/v1}
+    expose:
+      - "8091"
+    restart: unless-stopped
+
   # --- Frontend: removed. Chat & Upload are native Operator Console views
   # (src/iw_rag/api/console_embed_page.py), so the FastAPI `api` service is the
   # single frontend. The Chainlit app under frontend/ is no longer deployed. ---

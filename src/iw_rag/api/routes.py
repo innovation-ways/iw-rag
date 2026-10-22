@@ -33,6 +33,7 @@ from iw_rag.api.schemas import (
     QueryRequest,
     QueryResponse,
 )
+from iw_rag.api.system_power import maybe_warm_generator
 from iw_rag.domain.acl import AccessContext
 from iw_rag.domain.errors import AuthenticationError, AuthorizationError
 from iw_rag.domain.models import Citation
@@ -307,6 +308,10 @@ async def query(
         loop: When ``False`` (``?loop=off``) the agent graph is bypassed and the
             Phase-0 spine+assembler path is used directly (experiment #4).
     """
+    # Block-and-warm: if the generator was auto-unloaded for VRAM, power it
+    # back on and wait before serving (no-op when power control is off /
+    # benchmark mode / generator already up).  Also resets the idle clock.
+    await maybe_warm_generator(request)
     service = request.app.state.query_service
     ctx = await _scope_to_session(request, ctx, req.session_id)
 
@@ -507,6 +512,9 @@ async def query_stream(
     Returns:
         A ``StreamingResponse`` with ``media_type="text/event-stream"``.
     """
+    # Block-and-warm before opening the stream (see /query).  Best-effort; a
+    # power-on failure surfaces as the canonical SSE error event downstream.
+    await maybe_warm_generator(request)
     service = request.app.state.query_service
     ctx = await _scope_to_session(request, ctx, req.session_id)
     trace_id = getattr(request.state, "trace_id", "")

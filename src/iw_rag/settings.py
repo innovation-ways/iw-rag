@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     InitSettingsSource,
@@ -868,6 +868,198 @@ class ServingSwapSettings(BaseModel):
     activation_group: str = "eval-operator"
 
 
+class PowerComponentCfg(BaseModel):
+    """One managed VRAM-holding component the power controller can stop/start.
+
+    A component is a named group of Docker containers that, together, hold a
+    chunk of VRAM and are powered on/off as a unit (e.g. ``"generator"`` =
+    the vLLM container; ``"embedder"`` = the Infinity container serving the
+    BGE-M3 embedder + reranker; ``"guards"`` = the input/injection guard
+    sidecars).  The container names are deployment-specific (Compose project
+    name + service), so they live in config rather than code (mirrors the
+    model-agnostic catalog ethos — adding/renaming a managed container is a
+    config change, never a code change).
+
+    Attributes:
+        containers: Docker container names this component owns.  All are
+            stopped on power-off and started on power-on.  A name that does
+            not resolve to a real container is skipped (not an error) so the
+            same config works whether or not the optional guard overlay is up.
+        label: Human-facing label for the console (defaults to the component
+            key when blank).
+        description: One-line explanation shown under the toggle.
+        idle_unload: Whether the idle monitor auto-unloads this component
+            after the idle timeout.  Default ``False``: only the generator
+            (the dominant, cheapest-to-reload footprint) opts in, so the
+            embedder/guards stay warm and every cold start after idle reloads
+            only the LLM.
+    """
+
+    containers: list[str] = []
+    label: str = ""
+    description: str = ""
+    idle_unload: bool = False
+
+
+def _default_power_components() -> dict[str, PowerComponentCfg]:
+    """Default serving-mode component → container mapping (single 32 GB box).
+
+    Mirrors the canonical serving-mode container names (Compose project
+    ``iw-rag`` + service): the pinned vLLM generator (``iw-rag-vllm-1``), the
+    always-on Infinity embedder+reranker (``iw-rag-infinity-1``), and the
+    optional guard sidecars (``iw-rag-vllm-guard`` / ``injguard``, present only
+    when the guards overlay is up).  Overridable wholesale via
+    ``IW_RAG__POWER__COMPONENTS`` (JSON) for a differently-named deployment.
+    """
+    return {
+        "generator": PowerComponentCfg(
+            # Serving mode pins ``iw-rag-vllm-1``; benchmark mode's generator is
+            # llama-swap's dynamic ``vllm-<served-name>`` container.  The
+            # vendor-family patterns match every generator llama-swap can spawn
+            # (config/llama-swap.yaml) WITHOUT matching the judges
+            # (``vllm-judge-*``) or unrelated projects — so one map works in both
+            # modes.  Override via IW_RAG__POWER__COMPONENTS if a non-iw-rag
+            # container shares one of these vendor prefixes on the box.
+            containers=[
+                "iw-rag-vllm-1",
+                "vllm-qwen*",
+                "vllm-llama*",
+                "vllm-hermes*",
+                "vllm-mistral*",
+            ],
+            label="Generator (LLM)",
+            description="The vLLM generator — the dominant VRAM consumer (~10-18 GB).",
+            idle_unload=True,
+        ),
+        "embedder": PowerComponentCfg(
+            containers=["iw-rag-infinity-1"],
+            label="Embedder + reranker",
+            description="Infinity BGE-M3 embedder + reranker (~4 GB). Needed for retrieval.",
+            idle_unload=False,
+        ),
+        "judges": PowerComponentCfg(
+            # Benchmark two-phase judges (Lynx faithfulness + Selene grading),
+            # spawned by llama-swap.  Loaded during scoring; a resident judge can
+            # hold ~16-18 GB, so it is worth being able to free explicitly.
+            containers=["vllm-judge-lynx", "vllm-judge-selene"],
+            label="Benchmark judges",
+            description="Lynx + Selene judges (benchmark scoring only; ~16-18 GB when resident).",
+            idle_unload=False,
+        ),
+        "guards": PowerComponentCfg(
+            containers=["iw-rag-vllm-guard", "injguard"],
+            label="Guard models",
+            description="Input/injection guard sidecars (~1-2 GB). Present only when guards-on.",
+            idle_unload=False,
+        ),
+    }
+
+
+class PowerModePlan(BaseModel):
+    """The container + endpoint plan for one box mode (serving | benchmark).
+
+    A mode switch is: stop ``stop`` containers, start ``start`` containers
+    (wait until ready), and re-point the API's generator at ``generator_endpoint``
+    with ``guards`` enabled/disabled — the in-UI equivalent of the
+    ``make serving-mode`` / ``make benchmark-mode`` targets.  Container names
+    that do not exist are skipped, so the optional guard containers being
+    absent is not an error.
+
+    Attributes:
+        start: Containers to start (and wait to ready) when entering this mode.
+        stop: Containers to stop when entering this mode.
+        generator_endpoint: The generator endpoint the API rebuilds onto.
+        guards: Whether guardrails are enabled in this mode.
+    """
+
+    start: list[str] = []
+    stop: list[str] = []
+    generator_endpoint: str = ""
+    guards: bool = True
+
+
+def _default_power_modes() -> dict[str, PowerModePlan]:
+    """Default serving/benchmark switch plans (mirror the make targets)."""
+    swap_stack = ["iw-rag-llama-swap-1", "iw-rag-swap-controller-1"]
+    serving_stack = ["iw-rag-vllm-1", "iw-rag-vllm-guard", "injguard"]
+    return {
+        "serving": PowerModePlan(
+            start=serving_stack,
+            stop=swap_stack,
+            generator_endpoint="http://vllm:8001/v1",
+            guards=True,
+        ),
+        "benchmark": PowerModePlan(
+            start=swap_stack,
+            stop=serving_stack,
+            generator_endpoint="http://llama-swap:8080/v1",
+            guards=False,
+        ),
+    }
+
+
+class PowerControlSettings(BaseModel):
+    """System power-control configuration (F — VRAM power switch).
+
+    Governs the ``system-control`` sidecar (the privileged FastAPI process
+    that owns the Docker socket and starts/stops the VRAM-holding containers)
+    and how the main API proxies to it, runs the idle-unload monitor, and
+    blocks-and-warms the first query after an auto-unload.
+
+    **Privilege boundary.**  The main API stays unprivileged — it NEVER
+    touches the Docker socket.  Only the sidecar (``base_url``) holds the
+    socket and runs ``docker stop/start``.  This mirrors the swap-controller
+    split: policy (idle timer, ACL gate) lives in the API; execution lives in
+    the sidecar.
+
+    Env mapping: ``IW_RAG__POWER__*``.
+
+    Attributes:
+        enabled: Master feature switch.  When ``False`` the API wires no
+            power client, runs no idle monitor, and the System view degrades
+            to "power control not enabled".
+        base_url: Base URL of the ``system-control`` sidecar (internal
+            Compose network only — NEVER published to the host, since it
+            holds the Docker socket).
+        docker_socket: Path to the Docker Unix socket the sidecar mounts
+            (read by the sidecar only).
+        power_group: The ACL group required to flip the power switch
+            (default ``"eval-operator"``).  Read from
+            ``AccessContext.principal_groups`` (auth only — never the request
+            body), mirroring the swap-controller activation keystone.
+        idle_unload_enabled: Whether the idle monitor auto-unloads idle
+            components after ``idle_unload_minutes``.
+        idle_unload_minutes: Idle threshold in minutes before auto-unload
+            (default 15).  The monitor unloads only components whose
+            :attr:`PowerComponentCfg.idle_unload` is ``True``.
+        ready_timeout_s: Per-component readiness budget after a start
+            (poll the container's running/health state until ready or this
+            timeout).  Default 300 to cover a real cold vLLM load.
+        poll_interval_s: Sleep between readiness polls in seconds.
+        block_and_warm: When ``True`` (default), a query that arrives while
+            the generator is powered off transparently powers it back on and
+            waits, rather than failing.  The first query after idle pays the
+            cold-start; subsequent queries are fast.
+        vram_ceiling_gb: The single-GPU VRAM ceiling in GB (32 for the
+            RTX 5090) — used only for the console gauge's full-scale.
+        components: The managed component → container mapping.
+    """
+
+    enabled: bool = True
+    base_url: str = "http://system-control:8091"
+    docker_socket: str = "/var/run/docker.sock"
+    power_group: str = "eval-operator"
+    idle_unload_enabled: bool = True
+    idle_unload_minutes: int = 15
+    ready_timeout_s: int = 300
+    poll_interval_s: float = 1.0
+    block_and_warm: bool = True
+    vram_ceiling_gb: float = 32.0
+    mode_switch_enabled: bool = True
+    components: dict[str, PowerComponentCfg] = Field(default_factory=_default_power_components)
+    modes: dict[str, PowerModePlan] = Field(default_factory=_default_power_modes)
+
+
 class LongContextModeSettings(BaseModel):
     """Long-context route configuration (modes.long_context, lld-long-context §6).
 
@@ -1163,6 +1355,7 @@ class Settings(BaseSettings):
     guardrails: GuardrailsSettings = GuardrailsSettings()
     modes: ModesSettings = ModesSettings()
     serving: ServingSwapSettings = ServingSwapSettings()
+    power: PowerControlSettings = PowerControlSettings()
     # Populated by the post-init validator; default is an empty registry so
     # pydantic does not try to parse it from env/yaml.
     models: ModelRegistry = ModelRegistry(models={})

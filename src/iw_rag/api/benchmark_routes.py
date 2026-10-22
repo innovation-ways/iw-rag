@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -695,7 +695,7 @@ async def _render_pdf(html: str) -> bytes:
             try:
                 page = await browser.new_page()
                 await page.set_content(html, wait_until="load")
-                return cast(bytes, await page.pdf(format="A4", print_background=True))
+                return await page.pdf(format="A4", print_background=True)
             finally:
                 await browser.close()
     except ValidationError:

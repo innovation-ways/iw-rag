@@ -19,3 +19,16 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+  # system-control reads NVML for the live VRAM gauge (allocates NO VRAM —
+  # read-only telemetry, like the benchmark api overlay).  Same NVML cgroup
+  # gotcha applies: a `systemctl daemon-reload` can revoke device-cgroup
+  # access mid-life → the gauge degrades to "unavailable"; `docker restart
+  # iw-rag-system-control-1` recreates the cgroup.
+  system-control:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
