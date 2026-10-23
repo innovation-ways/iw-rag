@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 
 from iw_rag.api.routes import AccessCtx
 from iw_rag.api.schemas import (
@@ -41,7 +42,9 @@ from iw_rag.api.schemas import (
 )
 from iw_rag.domain.acl import AccessContext
 from iw_rag.domain.errors import AuthorizationError, ValidationError
+from iw_rag.serving.capacity import check_capacity, gb_to_mb
 from iw_rag.serving.llama_swap_client import LlamaSwapUnavailable
+from iw_rag.serving.power_client import PowerControlUnavailable
 from iw_rag.serving.swap_controller_client import SwapControllerClient
 
 models_router = APIRouter()
@@ -270,13 +273,70 @@ async def list_models(
     )
 
 
+async def _activation_capacity_refusal(
+    request: Request, client: SwapControllerClient, model_id: str
+) -> JSONResponse | None:
+    """Pre-check that activating ``model_id`` fits in the GPU's free VRAM (F-00094/F-00098).
+
+    The swap is exclusive (one generator resident), so the memory the currently
+    resident generator holds counts as freed.  Skipped (returns ``None``, the
+    activation proceeds as before) when power control is not wired or disabled,
+    the pre-check is off, NVML is unavailable, or the catalog/status cannot be
+    read — an unknown ``model_id`` is left to the sidecar to reject with 404.
+
+    Activation is deliberately strict: there is no ``force`` here.
+
+    Args:
+        request: The raw FastAPI request (for ``app.state``).
+        client: The swap-controller client (catalog + status).
+        model_id: The catalog id being activated.
+
+    Returns:
+        A 409 ``insufficient_vram`` response when it would not fit, else ``None``.
+    """
+    power_client = getattr(request.app.state, "power_client", None)
+    settings = getattr(request.app.state, "settings", None)
+    power = getattr(settings, "power", None) if settings is not None else None
+    if power_client is None or power is None or not power.enabled:
+        return None
+    if not power.capacity_precheck_enabled:
+        return None
+    try:
+        catalog = await client.get_catalog()
+        status = await client.get_status()
+        vram = await power_client.get_vram()
+    except (LlamaSwapUnavailable, PowerControlUnavailable):
+        return None
+    rows = catalog.get("models", []) if isinstance(catalog, dict) else []
+    budgets = {
+        r.get("id"): float(r.get("expected_vram_gb", 0.0)) for r in rows if isinstance(r, dict)
+    }
+    if model_id not in budgets:
+        return None
+    active = status.get("active_model_id") if isinstance(status, dict) else None
+    if active == model_id:
+        return None
+    verdict = check_capacity(
+        starts_mb=gb_to_mb(budgets[model_id]),
+        freed_mb=gb_to_mb(budgets.get(active, 0.0)) if active else 0,
+        free_mb=vram.get("free_mb") if vram.get("available") else None,
+        margin_mb=gb_to_mb(power.capacity_margin_gb),
+        components=[model_id],
+    )
+    if verdict.ok:
+        return None
+    return JSONResponse(
+        status_code=409, content={"error": "insufficient_vram", **verdict.to_dict()}
+    )
+
+
 @models_router.post("/models/activate", response_model=ActivateResponse)
 async def activate_model(
     body: ActivateRequest,
     request: Request,
     ctx: EvalOperatorCtx,
     client: SwapControllerClientDep,
-) -> ActivateResponse:
+) -> Any:
     """Activate a catalog model — gated to the ``eval-operator`` group.
 
     The ACL check (:func:`require_eval_operator`) runs **before** the
@@ -291,8 +351,14 @@ async def activate_model(
             ``eval-operator`` group, verified by the dependency).
         client: The injected swap-controller HTTP client.
 
+    Before the swap is requested a capacity pre-check runs against live free
+    VRAM (:func:`_activation_capacity_refusal`); a model that would not fit is
+    refused with HTTP 409 (structured ``insufficient_vram`` body) and the
+    swap-controller is never called.
+
     Returns:
-        The post-activation status (state + active model id + reason).
+        The post-activation status (state + active model id + reason), or the
+        409 refusal.
 
     Raises:
         AuthorizationError: When the caller's groups do not include the
@@ -308,6 +374,9 @@ async def activate_model(
             via the existing ``_ERROR_STATUS`` handler in
             :mod:`iw_rag.api.app`).
     """
+    refusal = await _activation_capacity_refusal(request, client, body.model_id)
+    if refusal is not None:
+        return refusal
     payload = await client.activate(body.model_id)
     if not isinstance(payload, dict):
         # Defensive: the sidecar should always return a dict.

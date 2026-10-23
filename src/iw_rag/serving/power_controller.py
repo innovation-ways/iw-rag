@@ -36,9 +36,11 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from iw_rag.settings import PowerComponentCfg
+from iw_rag.settings import PowerComponentCfg, PowerProfileCfg
 
+from .capacity import CapacityVerdict, InsufficientVram, check_capacity, gb_to_mb
 from .docker_engine import ContainerState, DockerEngineClient, DockerUnavailable
+from .profiles import plan_profile
 from .vram import VramReader, VramSnapshot
 
 
@@ -100,6 +102,11 @@ class PowerStatus:
         transition: ``None`` when idle, else the in-flight op label
             (``"power_on"`` / ``"power_off"``) and its target keys.
         transition_keys: The component keys the in-flight op targets.
+        estimated_held_mb: Sum of the configured budgets of the components
+            that are on — an *estimate* of what iw-rag holds (per-process VRAM
+            is unavailable inside the sidecar container).
+        estimated_other_mb: ``used - estimated_held_mb`` (never negative), the
+            estimated share held by other processes; ``None`` without NVML.
     """
 
     state: PowerState
@@ -107,6 +114,8 @@ class PowerStatus:
     vram: VramSnapshot
     transition: str | None = None
     transition_keys: list[str] = field(default_factory=list)
+    estimated_held_mb: int = 0
+    estimated_other_mb: int | None = None
 
 
 class PowerController:
@@ -121,6 +130,10 @@ class PowerController:
         ready_timeout_s: Per power-on readiness budget in seconds.
         poll_interval_s: Sleep between readiness polls in seconds.
         stop_timeout_s: Graceful-stop seconds passed to ``docker stop``.
+        capacity_precheck_enabled: Whether starts are checked against live
+            free VRAM and refused with :class:`InsufficientVram` when they
+            would not fit (F-00098).
+        capacity_margin_gb: Free VRAM that must remain after a start.
     """
 
     def __init__(
@@ -132,6 +145,8 @@ class PowerController:
         ready_timeout_s: int = 300,
         poll_interval_s: float = 1.0,
         stop_timeout_s: int = 10,
+        capacity_precheck_enabled: bool = False,
+        capacity_margin_gb: float = 0.0,
     ) -> None:
         self._components = components
         self._docker = docker
@@ -139,6 +154,8 @@ class PowerController:
         self._ready_timeout_s = ready_timeout_s
         self._poll_interval_s = poll_interval_s
         self._stop_timeout_s = stop_timeout_s
+        self._precheck_enabled = capacity_precheck_enabled
+        self._margin_mb = gb_to_mb(capacity_margin_gb)
         self._lock = asyncio.Lock()
         # Live transition marker, read WITHOUT the lock so status() reflects an
         # in-flight flip.  Tuple of (op_label, target_keys) or None.
@@ -246,6 +263,8 @@ class PowerController:
                     )
             comp_status.append(self._component_status(key, cfg, states, daemon_down))
 
+        held_mb = sum(self._held_mb(c) for c in comp_status)
+        other_mb = None if vram.used_mb is None else max(0, vram.used_mb - held_mb)
         inflight = self._inflight
         if inflight is not None:
             op, t_keys = inflight
@@ -256,9 +275,108 @@ class PowerController:
                 vram=vram,
                 transition=op,
                 transition_keys=list(t_keys),
+                estimated_held_mb=held_mb,
+                estimated_other_mb=other_mb,
             )
         overall = self._overall_state(comp_status, daemon_down)
-        return PowerStatus(state=overall, components=comp_status, vram=vram)
+        return PowerStatus(
+            state=overall,
+            components=comp_status,
+            vram=vram,
+            estimated_held_mb=held_mb,
+            estimated_other_mb=other_mb,
+        )
+
+    # ------------------------------------------------------------------
+    # Capacity pre-check (F-00098)
+    # ------------------------------------------------------------------
+
+    def _budget_mb(self, key: str) -> int:
+        """Return a component's configured VRAM budget in MiB (0 if unbudgeted)."""
+        return gb_to_mb(self._components[key].vram_gb)
+
+    def _held_mb(self, c: ComponentStatus) -> int:
+        """Estimate the VRAM a component holds: full budget when on, pro-rated when partial.
+
+        A ``partial`` component has only some of its containers running (e.g. a
+        CPU-only guard without its GPU model), so counting its whole budget would
+        overstate what iw-rag holds.
+        """
+        if c.state == "on":
+            return self._budget_mb(c.key)
+        if c.state == "partial" and c.present:
+            return round(self._budget_mb(c.key) * c.running / c.present)
+        return 0
+
+    async def _keys_for_containers(self, names: list[str]) -> list[str]:
+        """Map raw container names back to component keys (unmapped names dropped).
+
+        Args:
+            names: Container names (as passed to :meth:`orchestrate`).
+
+        Returns:
+            The distinct component keys owning those names, in declared order.
+            Unmapped containers (e.g. the llama-swap stack) have no budget.
+        """
+        owners = {name: key for key, name in await self._containers_for(list(self._components))}
+        wanted = {owners[n] for n in names if n in owners}
+        return [k for k in self._components if k in wanted]
+
+    async def _verdict(
+        self, start_keys: list[str], stop_keys: list[str], *, force: bool = False
+    ) -> CapacityVerdict:
+        """Compute the capacity verdict for starting ``start_keys`` after ``stop_keys``.
+
+        Only components not already running contribute to the memory needed;
+        only stopped components that are currently running free memory.
+
+        Args:
+            start_keys: Component keys the action would start.
+            stop_keys: Component keys the same action stops first.
+            force: Operator override (bypasses the gate).
+
+        Returns:
+            The :class:`CapacityVerdict` (never raises).
+        """
+        status = await self.status()
+        state = {c.key: c.state for c in status.components}
+        to_start = [k for k in start_keys if state.get(k) not in ("on", "partial")]
+        starts_mb = sum(self._budget_mb(k) for k in to_start)
+        freed_mb = sum(self._budget_mb(k) for k in stop_keys if state.get(k) in ("on", "partial"))
+        return check_capacity(
+            starts_mb=starts_mb,
+            freed_mb=freed_mb,
+            free_mb=status.vram.free_mb if status.vram.available else None,
+            margin_mb=self._margin_mb,
+            enabled=self._precheck_enabled,
+            force=force,
+            components=to_start,
+        )
+
+    async def check(
+        self, keys: list[str] | None = None, *, stop: list[str] | None = None
+    ) -> CapacityVerdict:
+        """Dry-run the capacity pre-check for starting ``keys`` (after ``stop``).
+
+        Args:
+            keys: Component keys to start, or ``None`` for all managed.
+            stop: Component keys the same action would stop first.
+
+        Returns:
+            The :class:`CapacityVerdict`; nothing is started or stopped.
+
+        Raises:
+            KeyError: If a requested key is unknown.
+        """
+        return await self._verdict(self._resolve_keys(keys), self._resolve_keys(stop or []))
+
+    async def _require_capacity(
+        self, start_keys: list[str], stop_keys: list[str], *, force: bool
+    ) -> None:
+        """Raise :class:`InsufficientVram` unless the action fits (or is forced/disabled)."""
+        verdict = await self._verdict(start_keys, stop_keys, force=force)
+        if not verdict.ok:
+            raise InsufficientVram(verdict)
 
     @staticmethod
     def _component_status(
@@ -345,7 +463,7 @@ class PowerController:
     # Power on
     # ------------------------------------------------------------------
 
-    async def power_on(self, keys: list[str] | None = None) -> PowerStatus:
+    async def power_on(self, keys: list[str] | None = None, *, force: bool = False) -> PowerStatus:
         """Start the given components (or all) and wait until each is ready.
 
         For every container: issue ``docker start``, then poll its state until
@@ -354,8 +472,13 @@ class PowerController:
         skipped — so the optional guard containers being absent is not an
         error.
 
+        Before starting anything the capacity pre-check runs (when enabled):
+        a start that would not fit in the free VRAM is refused and nothing
+        is started.
+
         Args:
             keys: Component keys to start, or ``None`` for the master ON.
+            force: Operator override — bypass the capacity pre-check.
 
         Returns:
             The :class:`PowerStatus` after the start (components that timed
@@ -363,10 +486,12 @@ class PowerController:
 
         Raises:
             KeyError: If a requested key is unknown.
+            InsufficientVram: If the start would not fit and ``force`` is false.
             DockerUnavailable: If the daemon is unreachable mid-start.
         """
         resolved = self._resolve_keys(keys)
         async with self._lock:
+            await self._require_capacity(resolved, [], force=force)
             self._inflight = ("power_on", resolved)
             try:
                 started: list[str] = []
@@ -384,7 +509,9 @@ class PowerController:
     # Mode-switch orchestration (raw container lists)
     # ------------------------------------------------------------------
 
-    async def orchestrate(self, stop: list[str], start: list[str]) -> PowerStatus:
+    async def orchestrate(
+        self, stop: list[str], start: list[str], *, force: bool = False
+    ) -> PowerStatus:
         """Stop one set of containers and start (+ ready-wait) another.
 
         The container-lifecycle half of a mode switch (the API does the
@@ -394,17 +521,28 @@ class PowerController:
         skipped (start returns False → not waited on), so an optional guard
         container being absent is not an error.
 
+        The capacity pre-check runs first (when enabled), counting the memory
+        the stops free; a switch that would not fit is refused and nothing is
+        stopped or started.
+
         Args:
             stop: Container names to stop first (e.g. the outgoing mode's stack).
             start: Container names to start + poll to ready (the incoming stack).
+            force: Operator override — bypass the capacity pre-check.
 
         Returns:
             The :class:`PowerStatus` after the switch.
 
         Raises:
+            InsufficientVram: If the start would not fit and ``force`` is false.
             DockerUnavailable: If the daemon is unreachable mid-switch.
         """
         async with self._lock:
+            await self._require_capacity(
+                await self._keys_for_containers(start),
+                await self._keys_for_containers(stop),
+                force=force,
+            )
             self._inflight = ("switch", [*stop, *start])
             try:
                 for name in stop:
@@ -415,6 +553,50 @@ class PowerController:
                         started.append(name)
                 for name in started:
                     await self._poll_until_ready(name)
+            finally:
+                self._inflight = None
+        return await self.status()
+
+    async def apply_profile(
+        self, name: str, profiles: dict[str, PowerProfileCfg], *, force: bool = False
+    ) -> PowerStatus:
+        """Move the box to the named operating profile.
+
+        The plan (stops, then starts) is computed from the live status; the
+        capacity pre-check runs up front against the projected free memory
+        *including* the plan's own stops, so a refused profile stops nothing.
+        Components the profile does not name are left untouched.
+
+        Args:
+            name: Profile key.
+            profiles: The configured profiles (``Settings.power.profiles``).
+            force: Operator override — bypass the capacity pre-check.
+
+        Returns:
+            The :class:`PowerStatus` after the change.
+
+        Raises:
+            KeyError: If the profile is unknown.
+            InsufficientVram: If the starts would not fit and ``force`` is false.
+            DockerUnavailable: If the daemon is unreachable mid-change.
+        """
+        if name not in profiles:
+            raise KeyError(f"unknown power profile {name!r}; known: {sorted(profiles)}")
+        async with self._lock:
+            status = await self.status()
+            states = {c.key: c.state for c in status.components}
+            plan = plan_profile(profiles[name], self._components, states)
+            await self._require_capacity(plan.start, plan.stop, force=force)
+            self._inflight = ("switch", [*plan.stop, *plan.start])
+            try:
+                for _key, cname in await self._containers_for(plan.stop):
+                    await self._docker.stop(cname, timeout_s=self._stop_timeout_s)
+                started: list[str] = []
+                for _key, cname in await self._containers_for(plan.start):
+                    if await self._docker.start(cname):
+                        started.append(cname)
+                for cname in started:
+                    await self._poll_until_ready(cname)
             finally:
                 self._inflight = None
         return await self.status()

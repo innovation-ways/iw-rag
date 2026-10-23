@@ -10,6 +10,13 @@ and exposes a tiny HTTP surface the main API proxies to:
 * ``POST /power/on``      — start components (body ``{"components": [...] }``
   or ``{}`` / ``null`` for all) and wait until ready.
 * ``POST /power/off``     — stop components (or all) → frees VRAM.
+* ``POST /power/orchestrate`` — stop one container set, start another.
+* ``GET  /power/history`` — VRAM time series (in-memory ring buffer).
+* ``GET  /power/capacity``— dry-run capacity pre-check for starting components.
+* ``POST /power/profile`` — apply an operating profile (normal / light / yield).
+
+Starts that would not fit in free VRAM are refused with HTTP 409 and a
+structured ``insufficient_vram`` body (F-00098); ``force`` bypasses the gate.
 
 **Network exposure.**  Binds to ``:8091`` on the internal Compose network
 only — NEVER published to the host.  It holds the Docker socket
@@ -20,14 +27,20 @@ power group *before* proxying here).  Mirrors the swap-controller sidecar.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from iw_rag.settings import PowerProfileCfg
+
+from .capacity import InsufficientVram
 from .docker_engine import DockerUnavailable, HttpDockerEngineClient
 from .power_controller import ComponentStatus, PowerController, PowerState, PowerStatus
 from .vram import NvmlVramReader, VramSnapshot
+from .vram_history import VramHistory, run_sampler
 
 
 class PowerActionRequest(BaseModel):
@@ -36,9 +49,11 @@ class PowerActionRequest(BaseModel):
     Attributes:
         components: Component keys to act on, or ``None`` / omitted for the
             master action (every managed component).
+        force: Operator override — bypass the capacity pre-check (power-on only).
     """
 
     components: list[str] | None = None
+    force: bool = False
 
 
 class OrchestrateRequest(BaseModel):
@@ -47,15 +62,31 @@ class OrchestrateRequest(BaseModel):
     Attributes:
         stop: Container names to stop first.
         start: Container names to start + wait to ready.
+        force: Operator override — bypass the capacity pre-check.
     """
 
     stop: list[str] = []
     start: list[str] = []
+    force: bool = False
+
+
+class ProfileRequest(BaseModel):
+    """Body of ``POST /power/profile``.
+
+    Attributes:
+        name: Profile key to apply.
+        force: Operator override — bypass the capacity pre-check.
+    """
+
+    name: str
+    force: bool = False
 
 
 def create_app(
     *,
     controller: PowerController | None = None,
+    history: VramHistory | None = None,
+    profiles: dict[str, PowerProfileCfg] | None = None,
 ) -> FastAPI:
     """Build the system-control sidecar app.
 
@@ -63,6 +94,10 @@ def create_app(
         controller: Inject a pre-built controller (tests).  ``None`` defers
             construction to startup, where it is built from ``Settings.power``
             + the real Docker socket client + the NVML reader.
+        history: Inject a VRAM history buffer (tests).  ``None`` lets startup
+            build one from ``Settings.power`` and start the sampler.
+        profiles: Inject the operating profiles (tests); ``None`` reads them
+            from ``Settings.power.profiles`` at startup.
 
     Returns:
         A configured ``FastAPI`` owning the single :class:`PowerController`.
@@ -70,6 +105,8 @@ def create_app(
     app = FastAPI(title="iw-rag-system-control", version="0.0.0")
     if controller is not None:
         app.state.controller = controller
+    app.state.history = history
+    app.state.profiles = profiles if profiles is not None else {}
 
     @app.on_event("startup")
     async def _init_controller() -> None:  # pragma: no cover - exercised via ASGI in prod
@@ -86,7 +123,22 @@ def create_app(
             vram=vram,
             ready_timeout_s=power.ready_timeout_s,
             poll_interval_s=power.poll_interval_s,
+            capacity_precheck_enabled=power.capacity_precheck_enabled,
+            capacity_margin_gb=power.capacity_margin_gb,
         )
+        app.state.profiles = dict(power.profiles)
+        if power.history_enabled and app.state.history is None:
+            app.state.history = VramHistory(power.history_max_points)
+            app.state.history_interval_s = power.history_interval_s
+            app.state.sampler_task = asyncio.create_task(
+                run_sampler(vram, app.state.history, power.history_interval_s)
+            )
+
+    @app.on_event("shutdown")
+    async def _stop_sampler() -> None:  # pragma: no cover - exercised via ASGI in prod
+        task = getattr(app.state, "sampler_task", None)
+        if task is not None:
+            task.cancel()
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -107,11 +159,16 @@ def create_app(
         return _vram_to_dict(status.vram)
 
     @app.post("/power/on")
-    async def power_on(body: PowerActionRequest) -> dict[str, Any]:
+    async def power_on(body: PowerActionRequest) -> Any:
         """Start the requested components (or all) and wait until ready."""
         controller = _get_controller(app)
         try:
-            status = await controller.power_on(body.components)
+            if body.force:
+                status = await controller.power_on(body.components, force=True)
+            else:
+                status = await controller.power_on(body.components)
+        except InsufficientVram as exc:
+            return _insufficient(exc)
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except DockerUnavailable as exc:
@@ -131,16 +188,66 @@ def create_app(
         return _status_to_dict(status)
 
     @app.post("/power/orchestrate")
-    async def orchestrate(body: OrchestrateRequest) -> dict[str, Any]:
+    async def orchestrate(body: OrchestrateRequest) -> Any:
         """Stop one container set + start another (the container half of a mode switch)."""
         controller = _get_controller(app)
         try:
-            status = await controller.orchestrate(body.stop, body.start)
+            if body.force:
+                status = await controller.orchestrate(body.stop, body.start, force=True)
+            else:
+                status = await controller.orchestrate(body.stop, body.start)
+        except InsufficientVram as exc:
+            return _insufficient(exc)
+        except DockerUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return _status_to_dict(status)
+
+    @app.get("/power/history")
+    async def get_history(window_s: float = Query(3600.0, gt=0)) -> dict[str, Any]:
+        """Return the VRAM time series for the last ``window_s`` seconds."""
+        hist: VramHistory | None = app.state.history
+        samples = [] if hist is None else hist.window(window_s)
+        return {
+            "samples": [
+                {"ts": x.ts, "used_mb": x.used_mb, "free_mb": x.free_mb, "total_mb": x.total_mb}
+                for x in samples
+            ],
+            "interval_s": getattr(app.state, "history_interval_s", None),
+        }
+
+    @app.get("/power/capacity")
+    async def get_capacity(components: str | None = None) -> dict[str, Any]:
+        """Dry-run the capacity pre-check for starting ``components`` (comma list, default all)."""
+        controller = _get_controller(app)
+        keys = [k for k in components.split(",") if k] if components else None
+        try:
+            verdict = await controller.check(keys)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return verdict.to_dict()
+
+    @app.post("/power/profile")
+    async def apply_profile(body: ProfileRequest) -> Any:
+        """Apply an operating profile (stops first, then pre-checks and starts)."""
+        controller = _get_controller(app)
+        try:
+            status = await controller.apply_profile(body.name, app.state.profiles, force=body.force)
+        except InsufficientVram as exc:
+            return _insufficient(exc)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except DockerUnavailable as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         return _status_to_dict(status)
 
     return app
+
+
+def _insufficient(exc: InsufficientVram) -> JSONResponse:
+    """Render an :class:`InsufficientVram` as the shared HTTP 409 body."""
+    return JSONResponse(
+        status_code=409, content={"error": "insufficient_vram", **exc.verdict.to_dict()}
+    )
 
 
 def _get_controller(app: FastAPI) -> PowerController:
@@ -159,6 +266,8 @@ def _status_to_dict(status: PowerStatus) -> dict[str, Any]:
         "transition_keys": list(status.transition_keys),
         "components": [_component_to_dict(c) for c in status.components],
         "vram": _vram_to_dict(status.vram),
+        "estimated_held_mb": status.estimated_held_mb,
+        "estimated_other_mb": status.estimated_other_mb,
     }
 
 
