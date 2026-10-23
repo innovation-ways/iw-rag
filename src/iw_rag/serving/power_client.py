@@ -28,6 +28,25 @@ class PowerControlUnavailable(Exception):
     """
 
 
+class PowerCapacityError(Exception):
+    """Raised when the sidecar refuses an action because it would not fit in VRAM.
+
+    The sidecar answers HTTP 409 with a structured ``insufficient_vram`` body
+    (needed / free / projected / margin / shortfall in MiB); the API maps this
+    to its own 409 and the System view shows the shortfall.
+
+    Attributes:
+        body: The parsed ``insufficient_vram`` response body.
+    """
+
+    def __init__(self, body: dict[str, Any]) -> None:
+        self.body = body
+        super().__init__(
+            f"insufficient VRAM: short by {body.get('shortfall_mb', '?')} MiB "
+            f"(need {body.get('needed_mb', '?')} MiB, free {body.get('free_mb', '?')} MiB)"
+        )
+
+
 class PowerClient:
     """Typed async client for the system-control sidecar (``:8091``).
 
@@ -57,19 +76,75 @@ class PowerClient:
         """Return the VRAM snapshot (proxy for ``GET /power/vram``)."""
         return await self._get("/power/vram")
 
-    async def power_on(self, components: list[str] | None = None) -> dict[str, Any]:
-        """Trigger ``POST /power/on`` (block until ready).
+    async def get_history(self, window_s: float | None = None) -> dict[str, Any]:
+        """Return the VRAM time series (proxy for ``GET /power/history``).
 
         Args:
-            components: Component keys to start, or ``None`` for all.
+            window_s: Look-back window in seconds, or ``None`` for everything kept.
+
+        Returns:
+            ``{"samples": [...], "interval_s": float}``.
+
+        Raises:
+            PowerControlUnavailable: If the sidecar is unreachable or errors.
+        """
+        query = "" if window_s is None else f"?window_s={window_s}"
+        return await self._get(f"/power/history{query}")
+
+    async def get_capacity(self, components: list[str] | None = None) -> dict[str, Any]:
+        """Dry-run the capacity pre-check (proxy for ``GET /power/capacity``).
+
+        Args:
+            components: Component keys that would be started, or ``None`` for all.
+
+        Returns:
+            The capacity verdict as a dict (``ok``, ``needed_mb``, ``shortfall_mb`` ...).
+
+        Raises:
+            PowerControlUnavailable: If the sidecar is unreachable or errors.
+        """
+        query = "" if components is None else "?components=" + ",".join(components)
+        return await self._get(f"/power/capacity{query}")
+
+    async def apply_profile(self, name: str, *, force: bool = False) -> dict[str, Any]:
+        """Apply an operating profile (``POST /power/profile``).
+
+        Args:
+            name: Profile key.
+            force: Operator override — bypass the capacity pre-check.
 
         Returns:
             The post-action status payload.
 
         Raises:
+            PowerCapacityError: If the profile would not fit in free VRAM.
             PowerControlUnavailable: If the sidecar is unreachable or errors.
         """
-        return await self._post("/power/on", {"components": components})
+        body: dict[str, Any] = {"name": name}
+        if force:
+            body["force"] = True
+        return await self._post("/power/profile", body)
+
+    async def power_on(
+        self, components: list[str] | None = None, *, force: bool = False
+    ) -> dict[str, Any]:
+        """Trigger ``POST /power/on`` (block until ready).
+
+        Args:
+            components: Component keys to start, or ``None`` for all.
+            force: Operator override — bypass the capacity pre-check.
+
+        Returns:
+            The post-action status payload.
+
+        Raises:
+            PowerCapacityError: If the start would not fit in free VRAM.
+            PowerControlUnavailable: If the sidecar is unreachable or errors.
+        """
+        body: dict[str, Any] = {"components": components}
+        if force:
+            body["force"] = True
+        return await self._post("/power/on", body)
 
     async def power_off(self, components: list[str] | None = None) -> dict[str, Any]:
         """Trigger ``POST /power/off`` (frees VRAM).
@@ -85,20 +160,27 @@ class PowerClient:
         """
         return await self._post("/power/off", {"components": components})
 
-    async def orchestrate(self, *, stop: list[str], start: list[str]) -> dict[str, Any]:
+    async def orchestrate(
+        self, *, stop: list[str], start: list[str], force: bool = False
+    ) -> dict[str, Any]:
         """Trigger ``POST /power/orchestrate`` (container half of a mode switch).
 
         Args:
             stop: Container names to stop first.
             start: Container names to start + wait to ready.
+            force: Operator override — bypass the capacity pre-check.
 
         Returns:
             The post-switch status payload.
 
         Raises:
+            PowerCapacityError: If the incoming stack would not fit in free VRAM.
             PowerControlUnavailable: If the sidecar is unreachable or errors.
         """
-        return await self._post("/power/orchestrate", {"stop": stop, "start": start})
+        body: dict[str, Any] = {"stop": stop, "start": start}
+        if force:
+            body["force"] = True
+        return await self._post("/power/orchestrate", body)
 
     # ------------------------------------------------------------------
     # Internals
@@ -124,6 +206,8 @@ class PowerClient:
                 resp = await client.post(url, json=body)
         except httpx.HTTPError as exc:
             raise PowerControlUnavailable(f"system-control unreachable at {url}: {exc}") from exc
+        if resp.status_code == 409:
+            raise PowerCapacityError(resp.json())
         if resp.status_code >= 400:
             raise PowerControlUnavailable(
                 f"system-control POST {path} returned HTTP {resp.status_code}: {resp.text[:200]}"

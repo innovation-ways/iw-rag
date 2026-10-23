@@ -431,10 +431,11 @@ def create_app(
     # None when disabled) + the activity tracker the idle monitor reads.  The
     # idle monitor task itself is started in a startup hook below (it needs a
     # running event loop).
-    from iw_rag.api.system_power import PowerActivityTracker
+    from iw_rag.api.system_power import PowerActivityTracker, PowerEventLog
 
     app.state.power_client = power_client
     app.state.power_activity = PowerActivityTracker()
+    app.state.power_events = PowerEventLog()
     # F-00095 / S02 — Benchmark Studio composition root.  Both
     # ``benchmark_runner`` (S01) and ``benchmark_service`` (F-00093) remain
     # **injectable** so tests can wire fakes.  The live ``benchmark_service``
@@ -566,11 +567,16 @@ def create_app(
         from iw_rag.api.system_power import power_idle_monitor
 
         app.state.power_idle_task = asyncio.create_task(power_idle_monitor(app))
+        # F-00098 — release generator/judges when OTHER processes squeeze the card.
+        from iw_rag.api.system_power import power_yield_monitor
+
+        app.state.power_yield_task = asyncio.create_task(power_yield_monitor(app))
 
     @app.on_event("shutdown")
     async def _stop_power_idle_monitor() -> None:  # pragma: no cover - needs a live loop
-        task = getattr(app.state, "power_idle_task", None)
-        if task is not None:
-            task.cancel()
+        for attr in ("power_idle_task", "power_yield_task"):
+            task = getattr(app.state, attr, None)
+            if task is not None:
+                task.cancel()
 
     return app

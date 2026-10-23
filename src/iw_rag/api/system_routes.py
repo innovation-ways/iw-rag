@@ -23,14 +23,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from iw_rag.api.routes import AccessCtx
 from iw_rag.api.system_power import resolve_mode
 from iw_rag.domain.acl import AccessContext
 from iw_rag.domain.errors import AuthorizationError, ValidationError
-from iw_rag.serving.power_client import PowerClient, PowerControlUnavailable
+from iw_rag.serving.power_client import PowerCapacityError, PowerClient, PowerControlUnavailable
 
 system_router = APIRouter()
 
@@ -47,10 +48,12 @@ class SystemPowerRequest(BaseModel):
         action: ``"on"`` to start, ``"off"`` to stop.
         components: Component keys to act on, or ``None`` for the master
             action (every managed component).
+        force: Operator override — bypass the capacity pre-check (``on`` only).
     """
 
     action: Literal["on", "off"]
     components: list[str] | None = Field(default=None)
+    force: bool = False
 
 
 class SystemModeRequest(BaseModel):
@@ -59,9 +62,23 @@ class SystemModeRequest(BaseModel):
     Attributes:
         target: ``"serving"`` (chat/query, generator pinned) or
             ``"benchmark"`` (Benchmark Studio swap stack).
+        force: Operator override — bypass the capacity pre-check.
     """
 
     target: Literal["serving", "benchmark"]
+    force: bool = False
+
+
+class SystemProfileRequest(BaseModel):
+    """Body of ``POST /system/profile``.
+
+    Attributes:
+        name: Operating profile key (``normal`` / ``light`` / ``yield`` by default).
+        force: Operator override — bypass the capacity pre-check.
+    """
+
+    name: str
+    force: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +144,46 @@ def _mode_block(request: Request) -> dict[str, Any]:
     }
 
 
+def _power_cfg(request: Request) -> Any:
+    """Return ``settings.power`` or ``None`` when settings are not wired."""
+    settings = getattr(request.app.state, "settings", None)
+    return getattr(settings, "power", None) if settings is not None else None
+
+
+def _active_profile(request: Request) -> str:
+    """Return the active operating profile key (runtime choice, else configured default)."""
+    chosen = getattr(request.app.state, "power_profile", None)
+    if chosen:
+        return str(chosen)
+    power = _power_cfg(request)
+    return str(getattr(power, "active_profile", "normal"))
+
+
+def _record_forced(request: Request, detail: str) -> None:
+    """Log an operator capacity-pre-check bypass to the event log (if wired)."""
+    events = getattr(request.app.state, "power_events", None)
+    if events is not None:
+        events.add("forced", detail=detail)
+
+
+def _capacity_409(exc: PowerCapacityError) -> JSONResponse:
+    """Render a sidecar capacity refusal as the console API's HTTP 409."""
+    return JSONResponse(status_code=409, content={**exc.body, "error": "insufficient_vram"})
+
+
+def _yield_block(request: Request) -> dict[str, Any]:
+    """Return the reactive-yield settings + recent events for the System view."""
+    power = _power_cfg(request)
+    events = getattr(request.app.state, "power_events", None)
+    return {
+        "enabled": bool(getattr(power, "yield_enabled", False)),
+        "threshold_gb": float(getattr(power, "yield_free_gb_threshold", 0.0)),
+        "sustain_s": float(getattr(power, "yield_sustain_s", 0.0)),
+        "margin_gb": float(getattr(power, "capacity_margin_gb", 0.0)),
+        "recent_events": events.recent(20) if events is not None else [],
+    }
+
+
 def _disabled_payload(request: Request, reason: str) -> dict[str, Any]:
     """Status payload when power control is not wired (HTTP 200, not 5xx)."""
     return {
@@ -165,6 +222,10 @@ async def system_status(request: Request, ctx: AccessCtx) -> dict[str, Any]:
     status["enabled"] = True
     status["available"] = True
     status.update(_mode_block(request))
+    status["profile"] = _active_profile(request)
+    status["yield"] = _yield_block(request)
+    other_mb = status.get("estimated_other_mb")
+    status["estimated_other_gb"] = None if other_mb is None else round(other_mb / 1024, 1)
     return status
 
 
@@ -187,7 +248,7 @@ async def system_power(
     body: SystemPowerRequest,
     request: Request,
     ctx: PowerOperatorCtx,
-) -> dict[str, Any]:
+) -> Any:
     """Flip system power — gated to the configured power group.
 
     Works in BOTH modes: in serving mode it stops/starts the pinned
@@ -200,12 +261,22 @@ async def system_power(
         AuthorizationError: Caller lacks the power group (→ 403).
         ValidationError: Feature not wired (→ 400).
         PowerControlUnavailable: Sidecar unreachable (→ 503).
+
+    A start that would not fit in the free VRAM is refused with HTTP 409
+    (structured ``insufficient_vram`` body) unless the operator sets ``force``.
     """
     client = _power_client(request)
     if client is None:
         raise ValidationError("power control is not enabled for this deployment")
     if body.action == "on":
-        status = await client.power_on(body.components)
+        try:
+            if body.force:
+                _record_forced(request, f"power on {body.components or 'all'} forced")
+                status = await client.power_on(body.components, force=True)
+            else:
+                status = await client.power_on(body.components)
+        except PowerCapacityError as exc:
+            return _capacity_409(exc)
     else:
         status = await client.power_off(body.components)
     status["enabled"] = True
@@ -219,7 +290,7 @@ async def system_mode(
     body: SystemModeRequest,
     request: Request,
     ctx: PowerOperatorCtx,
-) -> dict[str, Any]:
+) -> Any:
     """Switch the box between serving (chat) and benchmark mode (gated).
 
     The in-UI equivalent of ``make serving-mode`` / ``make benchmark-mode``:
@@ -246,7 +317,16 @@ async def system_mode(
         raise ValidationError(f"no mode plan configured for '{body.target}'")
 
     # 1. Container dance (sidecar): stop the outgoing stack, start the incoming.
-    status = await client.orchestrate(stop=list(plan.stop), start=list(plan.start))
+    try:
+        if body.force:
+            _record_forced(request, f"mode switch to {body.target} forced")
+            status = await client.orchestrate(
+                stop=list(plan.stop), start=list(plan.start), force=True
+            )
+        else:
+            status = await client.orchestrate(stop=list(plan.stop), start=list(plan.start))
+    except PowerCapacityError as exc:
+        return _capacity_409(exc)
     # 2. Re-point the API generator in-process (no container restart).
     if plan.generator_endpoint:
         from iw_rag.api.app import rebuild_query_service_generator
@@ -258,6 +338,120 @@ async def system_mode(
     status["available"] = True
     status.update(_mode_block(request))
     return status
+
+
+@system_router.get("/system/history")
+async def system_history(
+    request: Request,
+    ctx: AccessCtx,
+    window_s: Annotated[float, Query(gt=0, le=86_400)] = 3600.0,
+) -> dict[str, Any]:
+    """Return the VRAM time series merged with GPU-aware events (any auth).
+
+    Degrades to an empty series (HTTP 200) when power control is off or the
+    sidecar is unreachable, so the chart shows "no data yet" instead of erroring.
+    """
+    events = getattr(request.app.state, "power_events", None)
+    recent = [e for e in (events.recent(100) if events is not None else [])]
+    client = _power_client(request)
+    if client is None:
+        return {"available": False, "samples": [], "events": recent, "interval_s": None}
+    try:
+        hist = await client.get_history(window_s)
+    except PowerControlUnavailable:
+        return {"available": False, "samples": [], "events": recent, "interval_s": None}
+    samples = hist.get("samples", [])
+    if samples:
+        start = samples[0]["ts"]
+        recent = [e for e in recent if e["ts"] >= start]
+    return {
+        "available": True,
+        "samples": samples,
+        "events": recent,
+        "interval_s": hist.get("interval_s"),
+    }
+
+
+@system_router.get("/system/profiles")
+async def system_profiles(request: Request, ctx: AccessCtx) -> dict[str, Any]:
+    """List the operating profiles with their VRAM budgets (any auth)."""
+    power = _power_cfg(request)
+    if power is None or _power_client(request) is None:
+        return {"enabled": False, "active": None, "profiles": []}
+    active = _active_profile(request)
+    items = [
+        {
+            "name": name,
+            "label": prof.label,
+            "description": prof.description,
+            "budget_gb": sum(power.components[k].vram_gb for k in prof.on if k in power.components),
+            "on": list(prof.on),
+            "off": list(prof.off),
+            "active": name == active,
+        }
+        for name, prof in power.profiles.items()
+    ]
+    return {"enabled": True, "active": active, "profiles": items}
+
+
+@system_router.post("/system/profile")
+async def system_profile(
+    body: SystemProfileRequest,
+    request: Request,
+    ctx: PowerOperatorCtx,
+) -> Any:
+    """Apply an operating profile — gated to the configured power group.
+
+    The sidecar stops what the profile releases, runs the capacity pre-check
+    against the projected free memory and starts the rest; a profile that
+    would not fit is refused with HTTP 409 (unless ``force``).
+
+    Raises:
+        AuthorizationError: Caller lacks the power group (→ 403).
+        ValidationError: Feature not wired, or unknown profile (→ 400).
+        PowerControlUnavailable: Sidecar unreachable (→ 503).
+    """
+    client = _power_client(request)
+    power = _power_cfg(request)
+    if client is None or power is None:
+        raise ValidationError("power control is not enabled for this deployment")
+    if body.name not in power.profiles:
+        raise ValidationError(f"unknown profile '{body.name}'; known: {sorted(power.profiles)}")
+    try:
+        if body.force:
+            _record_forced(request, f"profile {body.name} forced")
+            status = await client.apply_profile(body.name, force=True)
+        else:
+            status = await client.apply_profile(body.name)
+    except PowerCapacityError as exc:
+        return _capacity_409(exc)
+    request.app.state.power_profile = body.name
+    status["enabled"] = True
+    status["available"] = True
+    status.update(_mode_block(request))
+    status["profile"] = body.name
+    return status
+
+
+@system_router.get("/system/capacity")
+async def system_capacity(
+    request: Request,
+    ctx: AccessCtx,
+    components: str | None = None,
+) -> dict[str, Any]:
+    """Dry-run the capacity pre-check for starting ``components`` (comma list; any auth).
+
+    Degrades to ``{"ok": True, "skipped": "unavailable"}`` when power control is
+    off or unreachable so the UI never blocks on a missing check.
+    """
+    client = _power_client(request)
+    if client is None:
+        return {"ok": True, "skipped": "unavailable"}
+    keys = [k for k in components.split(",") if k] if components else None
+    try:
+        return await client.get_capacity(keys)
+    except PowerControlUnavailable:
+        return {"ok": True, "skipped": "unavailable"}
 
 
 __all__ = ["system_router"]

@@ -893,12 +893,65 @@ class PowerComponentCfg(BaseModel):
             (the dominant, cheapest-to-reload footprint) opts in, so the
             embedder/guards stay warm and every cold start after idle reloads
             only the LLM.
+        vram_gb: Approximate VRAM this component holds when resident, in GiB.
+            Drives the capacity pre-check (what a start would add), the
+            estimated iw-rag-held figure and the profile budgets.  ``0`` means
+            "unbudgeted" (never blocks).
+        yield_unload: Whether the reactive yield monitor may power this
+            component off when free VRAM stays low because of *other*
+            processes.  Only the big, cheaply-reloaded holders opt in.
     """
 
     containers: list[str] = []
     label: str = ""
     description: str = ""
     idle_unload: bool = False
+    vram_gb: float = Field(default=0.0, ge=0.0)
+    yield_unload: bool = False
+
+
+class PowerProfileCfg(BaseModel):
+    """A named operating profile: which components to keep on or off.
+
+    A profile only manages the components it names; any component in neither
+    list is left exactly as it is.  Applying a profile stops the ``off``
+    components first, then runs the capacity pre-check and starts the ``on``
+    ones.
+
+    Attributes:
+        label: Human-facing name shown in the System view.
+        description: One-line explanation of the trade-off.
+        on: Component keys that must be running under this profile.
+        off: Component keys that must be stopped under this profile.
+        warm_on_demand: Whether a query may re-warm the generator under this
+            profile (block-and-warm) when it is off.
+    """
+
+    label: str
+    description: str = ""
+    on: list[str] = []
+    off: list[str] = []
+    warm_on_demand: bool = True
+
+    @model_validator(mode="after")
+    def _on_off_disjoint(self) -> PowerProfileCfg:
+        """Reject a component that is both required on and required off.
+
+        Returns:
+            Self when ``on`` and ``off`` do not overlap.
+
+        Raises:
+            ValueError: If a component key appears in both lists.
+        """
+        both = sorted(set(self.on) & set(self.off))
+        if both:
+            raise ValueError(f"profile lists component(s) {both} as both on and off")
+        if not self.on and not self.off:
+            raise ValueError(
+                "profile names no components (empty on and off) - in YAML the keys must be "
+                'quoted ("on"/"off"): bare on/off are parsed as booleans'
+            )
+        return self
 
 
 def _default_power_components() -> dict[str, PowerComponentCfg]:
@@ -930,12 +983,15 @@ def _default_power_components() -> dict[str, PowerComponentCfg]:
             label="Generator (LLM)",
             description="The vLLM generator — the dominant VRAM consumer (~10-18 GB).",
             idle_unload=True,
+            vram_gb=18.0,
+            yield_unload=True,
         ),
         "embedder": PowerComponentCfg(
             containers=["iw-rag-infinity-1"],
             label="Embedder + reranker",
             description="Infinity BGE-M3 embedder + reranker (~4 GB). Needed for retrieval.",
             idle_unload=False,
+            vram_gb=4.0,
         ),
         "judges": PowerComponentCfg(
             # Benchmark two-phase judges (Lynx faithfulness + Selene grading),
@@ -945,12 +1001,43 @@ def _default_power_components() -> dict[str, PowerComponentCfg]:
             label="Benchmark judges",
             description="Lynx + Selene judges (benchmark scoring only; ~16-18 GB when resident).",
             idle_unload=False,
+            vram_gb=18.0,
+            yield_unload=True,
         ),
         "guards": PowerComponentCfg(
             containers=["iw-rag-vllm-guard", "injguard"],
             label="Guard models",
-            description="Input/injection guard sidecars (~1-2 GB). Present only when guards-on.",
+            description="Input/injection guard sidecars (~7 GB). Present only when guards-on.",
             idle_unload=False,
+            vram_gb=7.0,
+        ),
+    }
+
+
+def _default_power_profiles() -> dict[str, PowerProfileCfg]:
+    """Default operating profiles (normal | light | yield).
+
+    ``yield`` keeps only the embedder resident so nearly the whole card is
+    free for other projects sharing the GPU.  Judges are deliberately absent
+    from ``normal``/``light`` so applying them never stops a benchmark judge.
+    """
+    return {
+        "normal": PowerProfileCfg(
+            label="Normal",
+            description="Generator, embedder and guards resident.",
+            on=["generator", "embedder", "guards"],
+        ),
+        "light": PowerProfileCfg(
+            label="Light",
+            description="Generator and embedder only; guard models released.",
+            on=["generator", "embedder"],
+            off=["guards"],
+        ),
+        "yield": PowerProfileCfg(
+            label="Yield GPU",
+            description="Embedder only; everything else released for other projects.",
+            on=["embedder"],
+            off=["generator", "guards", "judges"],
         ),
     }
 
@@ -1043,6 +1130,24 @@ class PowerControlSettings(BaseModel):
         vram_ceiling_gb: The single-GPU VRAM ceiling in GB (32 for the
             RTX 5090) — used only for the console gauge's full-scale.
         components: The managed component → container mapping.
+        capacity_precheck_enabled: Whether power-on / mode switch / profile
+            change / model activation are checked against live free VRAM and
+            refused (HTTP 409) when they would not fit.
+        capacity_margin_gb: Free VRAM that must remain after a start.  Always
+            greater than ``yield_free_gb_threshold`` so a start that passed
+            the pre-check cannot trip the yield monitor by itself.
+        yield_enabled: Whether the reactive yield monitor runs.
+        yield_free_gb_threshold: Free-VRAM level below which the card counts
+            as under pressure from other processes.
+        yield_sustain_s: How long free VRAM must stay below the threshold
+            before yielding.
+        yield_cooldown_s: Minimum time between two yields.
+        yield_check_interval_s: Seconds between yield monitor ticks.
+        history_enabled: Whether the sidecar samples VRAM history.
+        history_interval_s: Seconds between history samples.
+        history_max_points: History ring-buffer size (720 × 5 s = 1 h).
+        active_profile: Profile the System view shows as active at startup.
+        profiles: Named operating profiles.
     """
 
     enabled: bool = True
@@ -1058,6 +1163,44 @@ class PowerControlSettings(BaseModel):
     mode_switch_enabled: bool = True
     components: dict[str, PowerComponentCfg] = Field(default_factory=_default_power_components)
     modes: dict[str, PowerModePlan] = Field(default_factory=_default_power_modes)
+    capacity_precheck_enabled: bool = True
+    capacity_margin_gb: float = Field(default=3.0, ge=0.0)
+    yield_enabled: bool = True
+    yield_free_gb_threshold: float = Field(default=2.0, ge=0.0)
+    yield_sustain_s: float = Field(default=20.0, gt=0.0)
+    yield_cooldown_s: float = Field(default=120.0, ge=0.0)
+    yield_check_interval_s: float = Field(default=5.0, gt=0.0)
+    history_enabled: bool = True
+    history_interval_s: float = Field(default=5.0, gt=0.0)
+    history_max_points: int = Field(default=720, ge=10)
+    active_profile: str = "normal"
+    profiles: dict[str, PowerProfileCfg] = Field(default_factory=_default_power_profiles)
+
+    @model_validator(mode="after")
+    def _validate_gpu_aware(self) -> PowerControlSettings:
+        """Enforce the cross-field rules of the GPU-aware knobs at load time.
+
+        Returns:
+            Self when the configuration is consistent.
+
+        Raises:
+            ValueError: If the capacity margin does not exceed the yield
+                threshold, a profile names an unknown component, or
+                ``active_profile`` is not a configured profile.
+        """
+        if self.capacity_margin_gb <= self.yield_free_gb_threshold:
+            raise ValueError(
+                f"capacity_margin_gb ({self.capacity_margin_gb}) must be greater than "
+                f"yield_free_gb_threshold ({self.yield_free_gb_threshold}) so a start that "
+                "passed the pre-check cannot trip the yield monitor"
+            )
+        for name, profile in self.profiles.items():
+            unknown = sorted((set(profile.on) | set(profile.off)) - set(self.components))
+            if unknown:
+                raise ValueError(f"profile {name!r} names unknown component(s) {unknown}")
+        if self.profiles and self.active_profile not in self.profiles:
+            raise ValueError(f"active_profile {self.active_profile!r} is not a configured profile")
+        return self
 
 
 class LongContextModeSettings(BaseModel):

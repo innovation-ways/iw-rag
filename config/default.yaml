@@ -189,6 +189,36 @@ power:
   poll_interval_s: 1.0
   block_and_warm: true                   # first query after auto-unload powers the generator back on + waits
   vram_ceiling_gb: 32.0                  # single RTX 5090 — console gauge full-scale
+  # F-00098 — GPU-aware operation (the card is shared with other projects).
+  # NOTE: vLLM's --gpu-memory-utilization is fixed at container start; changing a
+  # running model's GPU cap needs a restart. Profiles choose WHAT is resident.
+  capacity_precheck_enabled: true        # refuse (HTTP 409) a start that cannot fit in free VRAM
+  capacity_margin_gb: 3.0                # free VRAM that must remain after a start (> yield threshold)
+  yield_enabled: true                    # release generator/judges when OTHER processes squeeze the card
+  yield_free_gb_threshold: 2.0           # free VRAM below this counts as pressure
+  yield_sustain_s: 20                    # ...for this long before yielding
+  yield_cooldown_s: 120                  # min gap between two yields
+  yield_check_interval_s: 5
+  history_enabled: true                  # sidecar samples VRAM for the System-view chart
+  history_interval_s: 5
+  history_max_points: 720                # 720 x 5 s = 1 h, in memory only
+  active_profile: normal
+  # NOTE: "on"/"off" MUST stay quoted - bare on/off are YAML 1.1 booleans.
+  profiles:
+    normal:
+      label: Normal
+      description: Generator, embedder and guards resident.
+      "on": [generator, embedder, guards]
+    light:
+      label: Light
+      description: Generator and embedder only; guard models released.
+      "on": [generator, embedder]
+      "off": [guards]
+    yield:
+      label: Yield GPU
+      description: Embedder only; everything else released for other projects.
+      "on": [embedder]
+      "off": [generator, guards, judges]
   mode_switch_enabled: true              # allow the System view to toggle serving <-> benchmark
   components:
     generator:
@@ -200,21 +230,27 @@ power:
       label: "Generator (LLM)"
       description: "The vLLM generator — the dominant VRAM consumer (~10-18 GB)."
       idle_unload: true
+      vram_gb: 18
+      yield_unload: true
     embedder:
       containers: ["iw-rag-infinity-1"]
       label: "Embedder + reranker"
       description: "Infinity BGE-M3 embedder + reranker (~4 GB). Needed for retrieval."
       idle_unload: false
+      vram_gb: 4
     judges:
       containers: ["vllm-judge-lynx", "vllm-judge-selene"]
       label: "Benchmark judges"
       description: "Lynx + Selene judges (benchmark scoring only; ~16-18 GB when resident)."
       idle_unload: false
+      vram_gb: 18
+      yield_unload: true
     guards:
       containers: ["iw-rag-vllm-guard", "injguard"]
       label: "Guard models"
-      description: "Input/injection guard sidecars (~1-2 GB). Present only when guards-on."
+      description: "Input/injection guard sidecars (~7 GB). Present only when guards-on."
       idle_unload: false
+      vram_gb: 7
   # Mode-switch plans — the in-UI equivalent of make serving-mode / benchmark-mode.
   modes:
     serving:

@@ -171,6 +171,9 @@ class _FakePowerClient:
     async def get_status(self) -> dict[str, Any]:
         return self._status
 
+    async def get_capacity(self, components: Any = None) -> dict[str, Any]:
+        return {"ok": True}
+
     async def power_on(self, components: Any = None) -> dict[str, Any]:
         self.power_on_calls.append(components)
         return self._status
