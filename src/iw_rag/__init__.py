@@ -8,4 +8,4 @@ Chainlit app is retired. See ``docs/build/00-architecture/repo-structure.md`` fo
 the layering contract.
 """
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"
