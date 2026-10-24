@@ -41,6 +41,10 @@ explaining what it measures and how to read it.
 
 from __future__ import annotations
 
+import json
+
+from iw_rag.learn.metrics import plain_map
+
 # ---------------------------------------------------------------------------
 # CSS — tooltip glossary (shared with the Scoreboard page)
 # ---------------------------------------------------------------------------
@@ -51,10 +55,16 @@ TOOLTIP_CSS = """
      single-brand-colour assertions hold. */
   .iw-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 6px; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-style: normal; font-weight: 700; line-height: 1; cursor: help; flex: none; vertical-align: middle; }
   .iw-tip:hover, .iw-tip:focus { color: var(--text); border-color: var(--teal-deep); outline: none; }
-  .iw-tip .iw-bub { position: absolute; bottom: 160%; left: 50%; transform: translateX(-50%); width: 250px; max-width: 70vw; background: var(--ink-3); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--text); text-align: left; letter-spacing: normal; text-transform: none; opacity: 0; visibility: hidden; transition: opacity .15s; z-index: 60; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  .iw-tip .iw-bub { position: absolute; bottom: 160%; left: 50%; transform: translateX(-50%); width: 310px; max-width: 78vw; background: var(--ink-3); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--text); text-align: left; letter-spacing: normal; text-transform: none; opacity: 0; visibility: hidden; transition: opacity .15s; z-index: 60; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
   .iw-tip:hover .iw-bub, .iw-tip:focus .iw-bub { opacity: 1; visibility: visible; }
+  /* Headers and cells aligned to the right: open the bubble leftwards so it stays on screen. */
+  th.num .iw-tip .iw-bub, td.num .iw-tip .iw-bub { left: auto; right: -8px; transform: none; }
   .iw-tip .iw-bub .t { display: block; color: var(--teal); font-weight: 700; margin-bottom: 3px; }
   .iw-tip .iw-bub .u { display: block; color: var(--muted); margin-bottom: 5px; font-size: 11px; }
+  .iw-tip .iw-bub .p { display: block; margin-bottom: 6px; }
+  .iw-tip .iw-bub .e, .iw-tip .iw-bub .g { display: block; margin-bottom: 6px; color: var(--muted); }
+  .iw-tip .iw-bub .e b, .iw-tip .iw-bub .g b { color: var(--text); font-weight: 600; }
+  .iw-tip .iw-bub .d { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 """
 
 # ---------------------------------------------------------------------------
@@ -106,7 +116,7 @@ REPORT_CSS = """
 # injected INSIDE each page's IIFE.  All identifiers are IW_-namespaced.
 # ---------------------------------------------------------------------------
 
-REPORT_JS = r"""
+_REPORT_JS_TEMPLATE = r"""
   // -----------------------------------------------------------------------
   // Metric glossary — what each number means + how to read it.  Surfaced as
   // hover tooltips so an operator never sees a bare "0.234" again.
@@ -139,7 +149,15 @@ REPORT_JS = r"""
     generation_tokens_delta: { label: "Generated tokens", unit: "tokens (this run)", desc: "Total output tokens vLLM generated across the run (counter delta). Used to derive throughput on the Scoreboard." }
   };
 
-  function IW_g(key) { return IW_GLOSSARY[key] || { label: key, unit: "", desc: "" }; }
+  // Plain-language layer (single source: iw_rag/learn/metrics.py): what each number
+  // means in everyday words, a concrete example and which direction is better.
+  var IW_PLAIN = __IW_PLAIN__;
+
+  function IW_g(key) {
+    if (IW_GLOSSARY[key]) return IW_GLOSSARY[key];
+    var pl = IW_PLAIN[key];
+    return { label: pl ? pl.name : key, unit: "", desc: "" };
+  }
 
   function IW_esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 
@@ -149,13 +167,22 @@ REPORT_JS = r"""
     return Number(v).toFixed(d);
   }
 
-  // Tooltip badge for a glossary key (label + unit + description).
+  // Tooltip badge for a key: label + unit, then the plain-language meaning, an example and
+  // which direction is better; the original technical description stays as a last line.
   function IW_tip(key) {
-    var g = IW_g(key);
+    var g = IW_g(key), pl = IW_PLAIN[key];
+    var body = "";
+    if (pl) {
+      body += '<span class="p">' + IW_esc(pl.plain) + '</span>' +
+        '<span class="e"><b>Example:</b> ' + IW_esc(pl.example) + '</span>' +
+        '<span class="g"><b>Good or bad?</b> ' + IW_esc(pl.good) + (pl.watch ? ' ' + IW_esc(pl.watch) : '') + '</span>';
+      if (g.desc) body += '<span class="d">' + IW_esc(g.desc) + '</span>';
+    } else {
+      body = IW_esc(g.desc);
+    }
     return '<span class="iw-tip" tabindex="0" aria-label="' + IW_esc(g.label) + '">i' +
       '<span class="iw-bub"><span class="t">' + IW_esc(g.label) + '</span>' +
-      (g.unit ? '<span class="u">' + IW_esc(g.unit) + '</span>' : '') +
-      IW_esc(g.desc) + '</span></span>';
+      (g.unit ? '<span class="u">' + IW_esc(g.unit) + '</span>' : '') + body + '</span></span>';
   }
 
   // Generic tooltip (no glossary entry) — used for section headers.
@@ -250,6 +277,14 @@ REPORT_JS = r"""
     return '<div class="iw-statgrid">' + cards + '</div>';
   }
 
+  // ---- how to read the numbers ----------------------------------------------
+  function IW_legend() {
+    return '<p class="iw-note">How to read the colours on 0–1 scores: ' +
+      '<span class="iw-v-good">green</span> is 0.75 or more, <span class="iw-v-mid">amber</span> is 0.5 to 0.75, ' +
+      '<span class="iw-v-low">red</span> is below 0.5. It is a rough guide, not a verdict, and for "lower is better" metrics the colours flip. ' +
+      'Hover the <b>i</b> beside any metric for what it means in plain words, with an example.</p>';
+  }
+
   // ---- quality metric tiers ------------------------------------------------
   function IW_metricRow(rep, def) {
     var g = IW_g(def.g);
@@ -304,7 +339,7 @@ REPORT_JS = r"""
   var IW_NA_RAGAS = "needs the Ragas metrics package (not enabled in this benchmark image)";
   var IW_NA_RAGAS_REF = "needs gold reference answers + the Ragas package (not enabled here)";
   var IW_TIERS = [
-    { title: "Retrieval quality", sub: "Did we fetch the right passages? Deterministic — computed from labels, no LLM judge.",
+    { title: "Retrieval quality", sub: "Did the search fetch the right passages? Scored against the dataset's answer key; no AI judge is involved.",
       help: "These compare the retrieved passages against the dataset's relevance labels. They do not look at the generated answer at all.",
       rows: [
         { g: "recall_at_5", keys: ["recall_at_5"] },
@@ -313,14 +348,14 @@ REPORT_JS = r"""
         { g: "ndcg_at_10", keys: ["ndcg_at_10"] },
         { g: "mrr", keys: ["mrr"] }
       ] },
-    { title: "Answer quality — reference-free", sub: "Graded by the judge model against the retrieved context. No gold answer needed.", judged: true,
+    { title: "Answer quality — reference-free", sub: "Is the answer honest? A judge model checks it against the passages that were retrieved; no reference answer is needed.", judged: true,
       help: "The judge reads the question, the retrieved context, and the generated answer, then scores how well-grounded the answer is.",
       rows: [
         { g: "faithfulness", keys: ["faithfulness_mean", "faithfulness"], na: "the judge returned no verdict (see the banner above)" },
         { g: "context_precision", keys: ["context_precision"], na: IW_NA_RAGAS },
         { g: "faithfulness_kappa", keys: ["faithfulness_kappa"], na: "measured by a separate κ harness, not this run" }
       ] },
-    { title: "Answer quality — needs reference answers", sub: "Need both gold reference answers and the Ragas package.",
+    { title: "Answer quality — needs reference answers", sub: "Does the answer match a known-correct reference? Needs reference answers and the Ragas package.",
       note: "These compare the answer against a known-correct reference and are produced by the Ragas package, which is not enabled in this benchmark image — so they are blank for this run (never zero).",
       help: "These require a known-correct answer to compare against AND the Ragas metrics package; both must be present for a value to appear.",
       rows: [
@@ -499,6 +534,7 @@ REPORT_JS = r"""
       '<button class="btn-primary" data-pdf-report="' + IW_esc(rep.id || "") + '">&#128196; Generate Report (PDF)</button></div>';
     html += IW_renderIntro(rep);
     html += IW_renderHeadline(rep);
+    html += IW_legend();
     html += IW_renderConclusion(rep);
     for (var i = 0; i < IW_TIERS.length; i++) html += IW_metricTier(rep, IW_TIERS[i]);
     html += IW_renderTimings(rep);
@@ -511,11 +547,28 @@ REPORT_JS = r"""
     return html;
   }
 
+  // One plain-language sentence for an A/B result: what changed on the two metrics that
+  // decide a winner, and whether the gap can be trusted.
+  function IW_plainVerdict(d) {
+    var rows = d.rows || [], pick = {};
+    for (var i = 0; i < rows.length; i++) pick[rows[i].metric] = rows[i];
+    function part(name, row) {
+      if (!row || row.delta == null || isNaN(row.delta)) return name + ": not measured in both runs";
+      var dl = Number(row.delta);
+      if (Math.abs(dl) < 0.005) return name + ": B is about the same as A";
+      var s = name + ": B is " + Math.abs(dl).toFixed(3) + (dl > 0 ? " higher" : " lower") + " than A";
+      return s + (row.significant ? " (a real difference)" : " (not significant, so it may be luck)");
+    }
+    var out = "In short. " + part("Search quality (nDCG@5)", pick.ndcg_at_5) + ". " + part("Honesty (faithfulness)", pick.faithfulness) + ". " +
+      (d.winner ? "Run " + d.winner + " wins: it is better on both." : "There is no clear winner: neither run is better on both.");
+    return '<div class="iw-intro">' + IW_esc(out) + '</div>';
+  }
+
   // ---- public: A/B compare body -------------------------------------------
   function IW_renderCompare(d) {
     var html = "";
     if (d.underpowered || /underpower|small.{0,8}sample|n[^\d]{0,3}37|n[^\d]{0,3}150|detectable/i.test(d.caveat || "")) {
-      html += '<div class="caveat-box"><strong>Underpowered.</strong> Read this with care — ' +
+      html += '<div class="caveat-box"><strong>Underpowered.</strong>' + IW_tip("underpowered") + ' Read this with care — ' +
         IW_esc(d.caveat || "with only ~37 queries the test reliably detects only ~0.08–0.12 retrieval / ~0.06–0.10 faithfulness gaps. Grow the golden set toward ~150 queries for firmer conclusions.") + '</div>';
     }
     var wClass = d.winner === "A" ? "A" : (d.winner === "B" ? "B" : "tie");
@@ -523,19 +576,20 @@ REPORT_JS = r"""
       ? ("Winner: " + d.winner + " — better on BOTH nDCG@5 and faithfulness")
       : "No clear winner — neither config wins on both nDCG@5 and faithfulness";
     html += '<p style="margin-top:6px"><span class="compare-winner ' + wClass + '">' + IW_esc(wText) + '</span>' + IW_tipRaw("How the winner is decided", "A configuration is only crowned when it beats the other on both ranking quality (nDCG@5) AND grounding (faithfulness). Ties and split decisions report no winner on purpose.") + '</p>';
+    html += IW_plainVerdict(d);
     if (d.reasoning) html += '<div class="compare-reasoning">' + IW_esc(d.reasoning) + '</div>';
     // Canonical AC5 column set (metric, val A, val B, delta, p_value,
     // p_corrected, CI 95%, significant) — kept verbatim so the stats
     // columns stay machine-anchored; the hover tooltips add the plain
     // language explanation on top.
-    html += '<table class="iw-metrics"><thead><tr><th>metric</th><th class="num">val A</th><th class="num">val B</th><th class="num">delta</th><th class="num">p_value</th><th class="num">p_corrected</th><th class="num">CI 95%</th><th>significant</th></tr></thead><tbody>';
+    html += '<table class="iw-metrics"><thead><tr><th>metric</th><th class="num">val A</th><th class="num">val B</th><th class="num">delta' + IW_tip("delta") + '</th><th class="num">p_value' + IW_tip("p_value") + '</th><th class="num">p_corrected' + IW_tip("p_corrected") + '</th><th class="num">CI 95%' + IW_tip("ci_95") + '</th><th>significant' + IW_tip("significant") + '</th></tr></thead><tbody>';
     var rows = d.rows || [];
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       var chip = row.significant ? '<span class="chip ok">✓ significant</span>' : '<span class="chip muted">not significant</span>';
       var ci = row.ci || (row.ci_95 && row.ci_95.length === 2 ? row.ci_95 : null);
       var ciStr = ci ? ("[" + IW_num(ci[0], 3) + ", " + IW_num(ci[1], 3) + "]") : "—";
-      var gk = IW_GLOSSARY[row.metric] ? IW_tip(row.metric) : "";
+      var gk = (IW_GLOSSARY[row.metric] || IW_PLAIN[row.metric]) ? IW_tip(row.metric) : "";
       html += '<tr><td class="lab">' + IW_esc(row.metric) + gk + '</td>' +
         '<td class="num">' + IW_num(row.val_a, 3) + '</td>' +
         '<td class="num">' + IW_num(row.val_b, 3) + '</td>' +
@@ -545,9 +599,25 @@ REPORT_JS = r"""
         '<td class="num">' + ciStr + '</td><td>' + chip + '</td></tr>';
     }
     html += '</tbody></table>';
+    html += '<p class="iw-note">Delta is B minus A: for "lower is better" metrics a negative delta is the improvement. ' +
+      '"Significant" needs the corrected p-value under 0.05 and a 95% range that stays on one side of zero. ' +
+      'With few questions, read a gap that is not significant as "this data cannot tell", not as "no difference". Hover the <b>i</b> beside a column for an example.</p>';
     return html;
   }
 """
 
 
-__all__ = ["REPORT_CSS", "REPORT_JS", "TOOLTIP_CSS"]
+def _plain_json() -> str:
+    """The plain-language explanations as JSON that is safe inside a ``<script>`` block."""
+    return json.dumps(plain_map(), ensure_ascii=False).replace("</", "<\\/")
+
+
+REPORT_JS = _REPORT_JS_TEMPLATE.replace("__IW_PLAIN__", _plain_json())
+
+
+def plain_terms_json() -> str:
+    """Plain-language explanations for pages that carry their own script (the Scoreboard)."""
+    return _plain_json()
+
+
+__all__ = ["REPORT_CSS", "REPORT_JS", "TOOLTIP_CSS", "plain_terms_json"]

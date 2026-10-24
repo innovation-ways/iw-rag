@@ -52,7 +52,9 @@ inline ``<script>`` passes ``node --check``.  The S13 route
 
 from __future__ import annotations
 
+from iw_rag.api.benchmark_primer import apply_benchmark_primer
 from iw_rag.api.benchmark_render import REPORT_CSS, REPORT_JS, TOOLTIP_CSS
+from iw_rag.api.console_nav import apply_console_nav
 from iw_rag.api.console_shell import add_favicon
 
 _PAGE = r"""<!doctype html>
@@ -154,16 +156,7 @@ _PAGE = r"""<!doctype html>
   <button class="btn-ghost hidden" id="logout">Sign out</button>
 </header>
 
-<nav class="console-nav hidden" id="consoleNav" aria-label="Console navigation">
-  <a class="nav-item" id="navConfig" href="/console/config">Config</a>
-  <a class="nav-item" id="navBenchmark" href="/console/benchmark">Benchmark</a>
-  <a class="nav-item" id="navResults" href="/console/results">Results</a>
-  <a class="nav-item" id="navCompare" href="/console/compare">Compare</a>
-  <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
-  <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
-  <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
-  <a class="nav-item" id="navSystem" href="/console/system">System</a>
-</nav>
+__CONSOLE_NAV__
 
 <main>
   <section id="loginView" class="hidden">
@@ -179,10 +172,11 @@ _PAGE = r"""<!doctype html>
   </section>
 
   <section id="appView" class="hidden">
+    __BENCH_PRIMER__
 
     <div class="card" id="reportsCard">
       <h2>Saved reports</h2>
-      <p class="sub">Persisted benchmark reports, newest first. Pick one below to deep-dive on the metric tiers, latency, VRAM, and <code>config_snapshot</code>; or pick two on the same dataset to A/B compare.</p>
+      <p class="sub">Every saved benchmark run, newest first. Open one to see how it did: did it find the right passages, were its answers honest, how fast was it and how much GPU memory did it use. To compare two runs on the same dataset, use the A/B compare box below.</p>
       <div class="row">
         <div>
           <label for="reportPicker">Report (deep-dive)</label>
@@ -197,7 +191,7 @@ _PAGE = r"""<!doctype html>
 
     <div class="card" id="compareCard">
       <h2>A/B compare</h2>
-      <p class="sub">Pick two persisted reports and inspect the per-metric delta table. The <strong>winner</strong> flag is set only when one config is better on <strong>both nDCG@5 AND faithfulness</strong>; the n&asymp;37 underpowered caveat is always surfaced. 400/404 errors are rendered in the panel verbatim — not as a toast that hides the cause.</p>
+      <p class="sub">Pick two saved runs on the same dataset to see which is better, and whether the difference is real. A <strong>winner</strong> is named only when one run is better at <strong>both search quality (nDCG@5) and honesty (faithfulness)</strong>. With about 37 questions small gaps can be luck, so the page always says when a result is underpowered. If something is wrong, for example the two runs used different datasets, the reason is shown right here.</p>
       <div class="row">
         <div>
           <label for="compareA">Report A</label>
@@ -526,7 +520,7 @@ def results_page_html() -> str:
     page = _PAGE.replace("/* __IW_REPORT_CSS__ */", TOOLTIP_CSS + REPORT_CSS).replace(
         "/* __IW_REPORT_JS__ */", REPORT_JS
     )
-    return add_favicon(page)
+    return apply_console_nav(apply_benchmark_primer(add_favicon(page)))
 
 
 __all__ = ["results_page_html"]

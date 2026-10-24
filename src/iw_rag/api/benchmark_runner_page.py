@@ -48,6 +48,8 @@ The S12 route ``GET /console/benchmark`` is wired against
 
 from __future__ import annotations
 
+from iw_rag.api.benchmark_primer import apply_benchmark_primer
+from iw_rag.api.console_nav import apply_console_nav
 from iw_rag.api.console_shell import add_favicon
 
 _PAGE = r"""<!doctype html>
@@ -119,6 +121,7 @@ _PAGE = r"""<!doctype html>
      ceiling itself lives server-side; the page renders the triple
      verbatim — no client-side math).  The RED class is keyed off the
      server's ``fits`` flag. */
+  .field-help { margin: 4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
   .vram-bar { position: relative; width: 100%; height: 18px; background: var(--ink-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin: 8px 0 4px; }
   .vram-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: linear-gradient(180deg, var(--teal) 0%, var(--teal-deep) 100%); transition: width .2s ease, background .2s ease; }
   .vram-bar-fill.vram-bar-red { background: linear-gradient(180deg, var(--danger) 0%, #be123c 100%); }
@@ -149,16 +152,7 @@ _PAGE = r"""<!doctype html>
   <button class="btn-ghost hidden" id="logout">Sign out</button>
 </header>
 
-<nav class="console-nav hidden" id="consoleNav" aria-label="Console navigation">
-  <a class="nav-item" id="navConfig" href="/console/config">Config</a>
-  <a class="nav-item" id="navBenchmark" href="/console/benchmark">Benchmark</a>
-  <a class="nav-item" id="navResults" href="/console/results">Results</a>
-  <a class="nav-item" id="navCompare" href="/console/compare">Compare</a>
-  <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
-  <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
-  <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
-  <a class="nav-item" id="navSystem" href="/console/system">System</a>
-</nav>
+__CONSOLE_NAV__
 
 <main>
   <section id="loginView" class="hidden">
@@ -174,11 +168,12 @@ _PAGE = r"""<!doctype html>
   </section>
 
   <section id="appView" class="hidden">
+    __BENCH_PRIMER__
     <div class="card" id="runCard">
       <h2>Run configuration</h2>
-      <p class="sub">Pick the per-step models, the golden dataset, and the run params. The generator is cold-swapped via F-00094; the live <strong>VRAM budget bar</strong> below renders the server-computed triple from <code>GET /models</code> — the math is server-side (Invariant 7). The run streams progress over SSE from <code>POST /benchmark/run</code>.</p>
+      <p class="sub">Choose the models and settings to test, then run the same list of questions through them. The page works out whether the chosen models fit in the GPU's memory before you start, and shows progress live while the run goes. Each setting has a one-line explanation under it.</p>
 
-      <div id="catalogWarn" class="catalog-warn hidden">Model catalog unavailable — populate the pickers manually or fix <code>GET /models</code>.</div>
+      <div id="catalogWarn" class="catalog-warn hidden">The model list is unavailable. Pick models by hand, or ask an operator to check the model service.</div>
       <div id="noCandidatesWarn" class="no-candidates hidden">No candidates — the catalog returned no eligible models. Run is disabled until a model becomes available.</div>
       <div id="modePanel" class="mode-panel hidden"></div>
 
@@ -186,21 +181,25 @@ _PAGE = r"""<!doctype html>
         <div>
           <label for="pickGenerator">Generator</label>
           <select id="pickGenerator"><option value="">(loading…)</option></select>
+          <p class="field-help">The model that writes the answer.</p>
         </div>
         <div>
           <label for="pickEmbedder">Embedder</label>
           <select id="pickEmbedder"><option value="">(loading…)</option></select>
+          <p class="field-help">Turns questions and passages into numbers so similar meanings can be found.</p>
         </div>
         <div>
           <label for="pickReranker">Reranker</label>
           <select id="pickReranker"><option value="">(loading…)</option></select>
+          <p class="field-help">Re-reads the best search results and puts the most relevant first.</p>
         </div>
         <div>
-          <label for="pickTopK">top_k</label>
+          <label for="pickTopK">Passages kept (top_k)</label>
           <input type="number" id="pickTopK" min="1" max="20" value="5" />
+          <p class="field-help">How many passages go to the generator. More gives it more to read, but adds noise.</p>
         </div>
         <div>
-          <label for="pickMode">mode</label>
+          <label for="pickMode">Retrieval mode</label>
           <select id="pickMode">
             <option value="auto" selected>auto</option>
             <option value="retrieve">retrieve</option>
@@ -208,11 +207,13 @@ _PAGE = r"""<!doctype html>
             <option value="long_context">long_context</option>
             <option value="visual">visual</option>
           </select>
+          <p class="field-help">auto lets the router pick a route per question; the others force one route.</p>
         </div>
       </div>
 
       <div style="margin-top: 18px;">
-        <label>VRAM budget (server-computed, 32 GB ceiling)</label>
+        <label>GPU memory budget (the card has 32 GB)</label>
+        <p class="field-help" style="margin:0 0 6px">The chosen models must fit in the card together. A run that does not fit is refused before it starts.</p>
         <div class="vram-bar" id="vramBar" aria-label="VRAM budget bar">
           <div class="vram-bar-fill" id="vramBarFill"></div>
         </div>
@@ -224,13 +225,13 @@ _PAGE = r"""<!doctype html>
 
       <div style="margin-top: 18px; display: flex; gap: 12px; align-items: center;">
         <button class="btn-primary" id="runBtn">Run Full Test</button>
-        <span class="muted" id="runHint">Live stream — your bearer token is used; the run is gated to the <code>eval-operator</code> group server-side.</span>
+        <span class="muted" id="runHint">Starting a run needs the <code>eval-operator</code> role. Progress appears live below.</span>
       </div>
     </div>
 
     <div class="card" id="progressCard">
       <h2>Live progress</h2>
-      <p class="sub">SSE stream from <code>POST /benchmark/run</code>. Stages: <code>queued → swapping → ready → running (query i / N) → scoring → done</code>. A terminal <code>error</code> with <code>reason_code: "swap_timeout"</code> is surfaced as a swap-timeout terminal state (no report rendered).</p>
+      <p class="sub">A run goes through these stages: queued, swapping the model onto the GPU, ready, running each question, scoring the answers, done. If loading the model times out, the run stops and no report is saved.</p>
       <div class="progress" id="progressPanel">
         <span class="stage" data-stage="queued">Queued</span>
         <span class="stage" data-stage="swapping">Swapping</span>
@@ -790,7 +791,7 @@ def benchmark_runner_page_html() -> str:
         The raw, self-contained HTML document as a ``str`` (no MIME /
         static-mount wiring required).
     """
-    return add_favicon(_PAGE)
+    return apply_console_nav(apply_benchmark_primer(add_favicon(_PAGE)))
 
 
 __all__ = ["benchmark_runner_page_html"]

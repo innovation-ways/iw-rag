@@ -40,7 +40,9 @@ helpers stay identical to the Results deep-dive.  The
 
 from __future__ import annotations
 
+from iw_rag.api.benchmark_primer import apply_benchmark_primer
 from iw_rag.api.benchmark_render import REPORT_CSS, REPORT_JS, TOOLTIP_CSS
+from iw_rag.api.console_nav import apply_console_nav
 from iw_rag.api.console_shell import add_favicon
 
 _PAGE = r"""<!doctype html>
@@ -171,16 +173,7 @@ _PAGE = r"""<!doctype html>
   <button class="btn-ghost hidden" id="logout">Sign out</button>
 </header>
 
-<nav class="console-nav hidden" id="consoleNav" aria-label="Console navigation">
-  <a class="nav-item" id="navConfig" href="/console/config">Config</a>
-  <a class="nav-item" id="navBenchmark" href="/console/benchmark">Benchmark</a>
-  <a class="nav-item" id="navResults" href="/console/results">Results</a>
-  <a class="nav-item" id="navCompare" href="/console/compare">Compare</a>
-  <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
-  <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
-  <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
-  <a class="nav-item" id="navSystem" href="/console/system">System</a>
-</nav>
+__CONSOLE_NAV__
 
 <main class="main-wrap">
   <section id="loginView" class="hidden">
@@ -196,6 +189,7 @@ _PAGE = r"""<!doctype html>
   </section>
 
   <section id="appView" class="hidden">
+    __BENCH_PRIMER__
 
     <div class="card" id="pickCard">
       <h2>Compare runs</h2>
@@ -720,11 +714,11 @@ _PAGE = r"""<!doctype html>
         esc(run.display_id || ("#" + run.id.slice(0, 8))) + ' vs baseline</h3>';
       var rows = run.deltas || [];
       if (!rows.length) { blocks += '<p class="muted">No shared per-query metrics with the baseline.</p>'; return; }
-      blocks += '<table class="iw-metrics"><thead><tr><th>metric</th><th class="num">baseline</th><th class="num">this run</th><th class="num">delta</th><th class="num">p_corrected</th><th class="num">CI 95%</th><th>significant</th></tr></thead><tbody>';
+      blocks += '<table class="iw-metrics"><thead><tr><th>metric</th><th class="num">baseline</th><th class="num">this run</th><th class="num">delta' + IW_tip("delta") + '</th><th class="num">p_corrected' + IW_tip("p_corrected") + '</th><th class="num">CI 95%' + IW_tip("ci_95") + '</th><th>significant' + IW_tip("significant") + '</th></tr></thead><tbody>';
       rows.forEach(function (row) {
         var chip = row.significant ? '<span class="chip ok">✓ significant</span>' : '<span class="chip muted">not significant</span>';
         var ci = row.ci && row.ci.length === 2 ? ("[" + IW_num(row.ci[0], 3) + ", " + IW_num(row.ci[1], 3) + "]") : "—";
-        var gk = (typeof IW_GLOSSARY !== "undefined" && IW_GLOSSARY[row.metric]) ? IW_tip(row.metric) : "";
+        var gk = (typeof IW_GLOSSARY !== "undefined" && (IW_GLOSSARY[row.metric] || IW_PLAIN[row.metric])) ? IW_tip(row.metric) : "";
         var dcls = (row.delta == null) ? "" : (row.delta >= 0 ? "iw-v-good" : "iw-v-low");
         blocks += '<tr><td class="lab">' + esc(row.metric) + gk + '</td>' +
           '<td class="num">' + IW_num(row.val_a, 3) + '</td>' +
@@ -736,7 +730,7 @@ _PAGE = r"""<!doctype html>
       blocks += '</tbody></table>';
     });
     return '<div class="card"><h2>Baseline-relative deltas</h2>' +
-      '<p class="sub">Every other run vs the baseline <strong>' + esc(baseLabel) + '</strong>. Delta = run − baseline (positive ⇒ the run beats the baseline). Paired Wilcoxon + BCa 95% CI, Bonferroni-Holm corrected.</p>' + blocks + '</div>';
+      '<p class="sub">Every other run vs the baseline <strong>' + esc(baseLabel) + '</strong>. Delta = run minus baseline: positive means the run beats the baseline (for \"lower is better\" metrics, negative does). Statistics: a paired test, a 95% confidence range, and a correction for testing many metrics at once. Hover the <b>i</b> beside a column for an example.</p>' + blocks + '</div>';
   }
 
   function IWC_renderItemsCard(data) {
@@ -912,7 +906,7 @@ def compare_page_html() -> str:
     page = _PAGE.replace("/* __IW_REPORT_CSS__ */", TOOLTIP_CSS + REPORT_CSS).replace(
         "/* __IW_REPORT_JS__ */", REPORT_JS
     )
-    return add_favicon(page)
+    return apply_console_nav(apply_benchmark_primer(add_favicon(page)))
 
 
 __all__ = ["compare_page_html"]

@@ -54,7 +54,9 @@ Invariant 4).
 
 from __future__ import annotations
 
-from iw_rag.api.benchmark_render import TOOLTIP_CSS
+from iw_rag.api.benchmark_primer import apply_benchmark_primer
+from iw_rag.api.benchmark_render import TOOLTIP_CSS, plain_terms_json
+from iw_rag.api.console_nav import apply_console_nav
 from iw_rag.api.console_shell import add_favicon
 
 _PAGE = r"""<!doctype html>
@@ -149,6 +151,13 @@ _PAGE = r"""<!doctype html>
   .model-config .k { color: var(--teal); }
   .run-id { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--text); white-space: nowrap; }
   .vh-unit { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 11px; }
+  #boardHelp { margin-top: 12px; }
+  .seg small.tech { display: block; font-size: 10px; opacity: .7; font-weight: 400; }
+  .seg input:checked + span small.tech { opacity: .85; }
+  .cfg { display: inline-flex; gap: 4px; align-items: baseline; margin: 0 10px 2px 0; white-space: nowrap; }
+  .cfg i { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .plain-help { font-size: 14px; color: var(--text); line-height: 1.55; margin: 0 0 4px; }
+  .plain-help .ex { color: var(--muted); display: block; margin-top: 3px; font-size: 13px; }
   .board-help { font-size: 13px; color: var(--muted); line-height: 1.55; margin: 0 0 6px; }
 /* __IW_TOOLTIP_CSS__ */
 </style>
@@ -162,22 +171,13 @@ _PAGE = r"""<!doctype html>
   <button class="btn-ghost hidden" id="logout">Sign out</button>
 </header>
 
-<nav class="console-nav hidden" id="consoleNav" aria-label="Console navigation">
-  <a class="nav-item" id="navConfig" href="/console/config">Config</a>
-  <a class="nav-item" id="navBenchmark" href="/console/benchmark">Benchmark</a>
-  <a class="nav-item" id="navResults" href="/console/results">Results</a>
-  <a class="nav-item" id="navCompare" href="/console/compare">Compare</a>
-  <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
-  <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
-  <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
-  <a class="nav-item" id="navSystem" href="/console/system">System</a>
-</nav>
+__CONSOLE_NAV__
 
 <main>
   <section id="loginView" class="hidden">
     <div class="card loginwrap">
       <h1>Sign in</h1>
-      <p class="sub">Use your demo credentials. The Scoreboard ranks the append-only <code>benchmark_reports</code> history; the ranking is computed server-side (S05) and is the sole authority on the per-row ordering (AC6).</p>
+      <p class="sub">Sign in to see how the benchmark runs rank against each other.</p>
       <label for="u">Username</label>
       <input type="text" id="u" autocomplete="username" />
       <label for="p">Password</label>
@@ -187,18 +187,19 @@ _PAGE = r"""<!doctype html>
   </section>
 
   <section id="appView" class="hidden">
+    __BENCH_PRIMER__
 
     <div class="card" id="boardCard">
       <h2>Leaderboard</h2>
-      <p class="sub">Pick a board. The default order is the server-provided ranking (S05) — the page only renders, never recomputes (Invariant 4). Column-header sorting is display convenience over the already-ranked rows.</p>
+      <p class="sub">Every benchmark run is ranked here. Pick a leaderboard to rank the runs by one thing: honest answers, search quality, speed, memory use, or an overall blend. The order comes from the server; clicking a column header only re-sorts what you see.</p>
 
       <div class="seg" id="boardPicker" aria-label="Scoreboard boards">
-        <label><input type="radio" name="board" value="faithfulness" checked data-board="faithfulness" /><span>faithfulness</span></label>
-        <label><input type="radio" name="board" value="ndcg_at_5" data-board="ndcg_at_5" /><span>ndcg_at_5</span></label>
-        <label><input type="radio" name="board" value="tok_per_s" data-board="tok_per_s" /><span>tok/s</span></label>
-        <label><input type="radio" name="board" value="latency" data-board="latency" /><span>latency</span></label>
-        <label><input type="radio" name="board" value="vram_efficiency" data-board="vram_efficiency" /><span>VRAM-efficiency</span></label>
-        <label><input type="radio" name="board" value="composite" data-board="composite" /><span>composite</span></label>
+        <label><input type="radio" name="board" value="faithfulness" checked data-board="faithfulness" /><span>Honest answers <small class="tech">faithfulness</small></span></label>
+        <label><input type="radio" name="board" value="ndcg_at_5" data-board="ndcg_at_5" /><span>Search quality <small class="tech">ndcg_at_5</small></span></label>
+        <label><input type="radio" name="board" value="tok_per_s" data-board="tok_per_s" /><span>Writing speed <small class="tech">tok/s</small></span></label>
+        <label><input type="radio" name="board" value="latency" data-board="latency" /><span>Worst-case wait <small class="tech">latency</small></span></label>
+        <label><input type="radio" name="board" value="vram_efficiency" data-board="vram_efficiency" /><span>Quality per GB <small class="tech">VRAM-efficiency</small></span></label>
+        <label><input type="radio" name="board" value="composite" data-board="composite" /><span>All-round <small class="tech">composite</small></span></label>
       </div>
 
       <p class="board-help" id="boardHelp"></p>
@@ -287,6 +288,8 @@ _PAGE = r"""<!doctype html>
       what: "A weighted blend of all five boards — faithfulness 30%, nDCG@5 20%, throughput 20%, latency 15%, VRAM-efficiency 15% — each min-max normalised across the cohort. A single \"all-round best\" number. Higher is better." }
   };
   var DEFAULT_BOARD = "faithfulness";
+  // Plain-language layer (single source: iw_rag/learn/metrics.py).
+  var IW_PLAIN = __IW_PLAIN__;
 
   // -------------------------------------------------------------------------
   // Hover glossary helper (shares the .iw-tip styling injected from
@@ -294,10 +297,16 @@ _PAGE = r"""<!doctype html>
   // render, so it carries its own tiny tooltip builder rather than the
   // full report renderer.
   // -------------------------------------------------------------------------
-  function IW_tip(title, unit, body) {
+  function IW_tip(title, unit, body, key) {
+    var pl = key ? IW_PLAIN[key] : null, inner;
+    if (pl) {
+      inner = '<span class="p">' + esc(pl.plain) + '</span><span class="e"><b>Example:</b> ' + esc(pl.example) + '</span>' +
+        '<span class="g"><b>Good or bad?</b> ' + esc(pl.good) + (pl.watch ? ' ' + esc(pl.watch) : '') + '</span>' +
+        (body ? '<span class="d">' + esc(body) + '</span>' : '');
+    } else { inner = esc(body); }
     return '<span class="iw-tip" tabindex="0" aria-label="' + esc(title) + '">i' +
       '<span class="iw-bub"><span class="t">' + esc(title) + '</span>' +
-      (unit ? '<span class="u">' + esc(unit) + '</span>' : '') + esc(body) + '</span></span>';
+      (unit ? '<span class="u">' + esc(unit) + '</span>' : '') + inner + '</span></span>';
   }
 
   function showLogin() {
@@ -462,20 +471,47 @@ _PAGE = r"""<!doctype html>
     return parts.join(" / ");
   }
 
+  // The configuration as labelled fields instead of one slash-joined string.
+  function configFields(snap, datasetName) {
+    if (!snap || typeof snap !== "object") return "";
+    var out = "";
+    [["generator", "Generator"], ["embedder", "Embedder"], ["reranker", "Reranker"], ["grader", "Judge"]].forEach(function (p) {
+      if (snap[p[0]] != null && snap[p[0]] !== "") out += '<span class="cfg"><i>' + p[1] + "</i>" + esc(String(snap[p[0]])) + "</span>";
+    });
+    var ds = datasetName || snap.dataset_id;
+    if (ds != null && ds !== "") out += '<span class="cfg"><i>Dataset</i>' + esc(String(ds)) + "</span>";
+    return out;
+  }
+  // "2026-06-17T11:43:43.726573+00:00" -> "17 Jun 2026, 11:43" (UTC); the raw value stays in the tooltip.
+  function fmtWhen(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    var mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()];
+    var two = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getUTCDate() + " " + mon + " " + d.getUTCFullYear() + ", " + two(d.getUTCHours()) + ":" + two(d.getUTCMinutes()) + " UTC";
+  }
+
   function renderBoardDesc(boardName) {
-    var meta = BOARDS[boardName] || BOARDS[DEFAULT_BOARD];
+    var key = BOARDS[boardName] ? boardName : DEFAULT_BOARD;
+    var meta = BOARDS[key];
     var dirLabel = meta.direction === "asc" ? "ascending (lower is better — fastest first)" : "descending (higher is better — best first)";
     $("boardDesc").innerHTML = "Ranking by <strong>" + esc(meta.label) + "</strong> (" + dirLabel + ").";
     $("boardTitle").textContent = meta.title;
     // Plain-language explanation of what this board ranks + how to read it.
-    if ($("boardHelp")) $("boardHelp").textContent = meta.what || "";
+    var pl = IW_PLAIN[key];
+    if ($("boardHelp")) {
+      $("boardHelp").innerHTML = pl
+        ? '<span class="plain-help"><strong>' + esc(pl.name) + ":</strong> " + esc(pl.plain) + '<span class="ex">Example: ' + esc(pl.example) + " " + esc(pl.good) + "</span></span>"
+        : esc(meta.what || "");
+    }
     // The Value column header carries the board's unit + a hover tooltip so
     // the number is never a bare "0.234".  Keep a .sort-ind span so the
     // sortable-header indicator logic still finds it.
     var vh = $("valueHeader");
     if (vh) {
       vh.innerHTML = 'Value <span class="vh-unit">' + esc(meta.unit) + '</span>' +
-        IW_tip(meta.title, meta.unit, meta.what || "") + '<span class="sort-ind">▼</span>';
+        IW_tip(meta.title, meta.unit, meta.what || "", key) + '<span class="sort-ind">▼</span>';
     }
   }
 
@@ -500,10 +536,10 @@ _PAGE = r"""<!doctype html>
       var trHtml =
         '<td class="num">' + (e.rank != null ? e.rank : "—") + '</td>' +
         '<td><span class="run-id">' + esc(runId) + '</span></td>' +
-        '<td><div class="model-config" title="' + esc(summary) + '">' + esc(summary) + '</div>' +
-        '<details style="margin:4px 0 0"><summary class="muted" style="cursor:pointer;font-size:11px">full config_snapshot</summary>' +
+        '<td><div class="model-config" title="' + esc(summary) + '">' + (configFields(e.config_snapshot, e.dataset_name) || esc(summary)) + '</div>' +
+        '<details style="margin:4px 0 0"><summary class="muted" style="cursor:pointer;font-size:11px">Show the full settings of this run</summary>' +
         '<pre style="white-space:pre-wrap;font-size:11px;color:var(--muted);margin:6px 0 0">' + esc(fullJson) + '</pre></details></td>' +
-        '<td>' + esc(e.created_at || "—") + '</td>' +
+        '<td title="' + esc(e.created_at || "") + '">' + esc(fmtWhen(e.created_at)) + '</td>' +
         '<td class="num">' + (e.metric_value == null ? '<span class="muted">—</span>' : fmt(e.metric_value, 3)) + '</td>';
       tr.innerHTML = trHtml;
       tb.appendChild(tr);
@@ -623,7 +659,15 @@ def scoreboard_page_html() -> str:
         The raw, self-contained HTML document as a ``str`` (no MIME /
         static-mount wiring required).
     """
-    return add_favicon(_PAGE.replace("/* __IW_TOOLTIP_CSS__ */", TOOLTIP_CSS))
+    return apply_console_nav(
+        apply_benchmark_primer(
+            add_favicon(
+                _PAGE.replace("/* __IW_TOOLTIP_CSS__ */", TOOLTIP_CSS).replace(
+                    "__IW_PLAIN__", plain_terms_json()
+                )
+            )
+        )
+    )
 
 
 __all__ = ["scoreboard_page_html"]
