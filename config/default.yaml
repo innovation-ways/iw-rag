@@ -41,6 +41,7 @@ retrieval:
   parent_expansion_max_chars: 4000  # I-00131: char budget per candidate during small-to-big parent expansion
                                     # (~1000 generator tokens; 8 candidates * 1k + ~2k overhead ≪ 16,384 max_model_len)
   rerank_on_failure: degrade
+  section_hits: true
   rerank_max_doc_chars: 2048        # perf: cap each candidate's text before cross-encoder scoring.
                                     # bge-reranker-v2-m3 judges relevance from the head; sending a whole
                                     # 50k-token long-doc chunk cost a flat ~30s/query. 2k chars ≈ sub-second.

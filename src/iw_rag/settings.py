@@ -195,6 +195,8 @@ class RetrievalSettings(BaseModel):
             generator's ``GenerationSettings.max_model_len`` (16,384 by
             default) — see I-00131 design §"Budget sizing constraint".
         rerank_on_failure: Behaviour when the reranker is unavailable.
+        section_hits: Whether a section (parent) row may match on its own and be a candidate.
+            ``False`` leaves only leaves (CR-00103); ``expansion_mode="leaf"`` does the same.
         rerank_max_doc_chars: Truncate each candidate's text to this many chars
             before cross-encoder scoring.  The reranker judges relevance from the
             head; an oversized whole-doc candidate otherwise pushed rerank
@@ -214,6 +216,7 @@ class RetrievalSettings(BaseModel):
     expansion_mode: Literal["leaf", "parent", "window"] = "parent"
     parent_expansion_max_chars: int = 4000
     rerank_on_failure: Literal["degrade", "fail"] = "degrade"
+    section_hits: bool = True
     rerank_max_doc_chars: int = 2048
     rerank_model: str = "reranker"
     embed_model: str = "embedder"

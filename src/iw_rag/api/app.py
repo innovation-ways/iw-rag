@@ -110,6 +110,7 @@ def _build_query_service(settings: Settings) -> tuple[Any, Any, Any]:
             expansion_mode=rcfg.expansion_mode,
             parent_expansion_max_chars=rcfg.parent_expansion_max_chars,
             rerank_on_failure=rcfg.rerank_on_failure,
+            section_hits=rcfg.section_hits,
         ),
     )
     llm = VllmClient(generator.endpoint, enable_thinking=settings.generation.enable_thinking)

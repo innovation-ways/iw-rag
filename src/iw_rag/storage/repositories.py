@@ -596,6 +596,26 @@ class ChunkRepository:
         by_id = {row["id"]: dict(row) for row in result.mappings()}
         return [by_id[cid] for cid in chunk_ids if cid in by_id]
 
+    async def get_section_ids(self, chunk_ids: Sequence[uuid.UUID]) -> frozenset[str]:
+        """Return which of ``chunk_ids`` are sections, that is, have at least one child chunk.
+
+        A section (parent) row is searchable like any chunk, but it is not a leaf: it needs
+        its own handling in the spine.  A row is a section when another row points at it, which
+        the ``chunks_parent`` index answers without a schema change.
+
+        Args:
+            chunk_ids: Candidate chunk ids.
+
+        Returns:
+            The ids (as strings) among ``chunk_ids`` that are parents of other chunks.
+        """
+        if not chunk_ids:
+            return frozenset()
+        c = schema.chunks
+        stmt = select(c.c.parent_id).where(c.c.parent_id.in_(list(chunk_ids))).distinct()
+        result = await self._session.execute(stmt)
+        return frozenset(str(row[0]) for row in result)
+
     async def get_parents(self, parent_ids: Sequence[uuid.UUID]) -> list[dict[str, Any]]:
         """Fetch parent chunk rows for small-to-big expansion.
 

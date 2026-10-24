@@ -85,7 +85,12 @@ def score_retrieval(
     Returns:
         A :class:`RetrievalScores`.
     """
-    ranked = [c.chunk_id for c in result.chunks]
+    ranked: list[str] = []
+    for chunk in result.chunks:
+        # A chunk that absorbed repeats (CR-00103) delivered their text too, so it counts as each
+        # id it covers, listed right after it: the same ids the pre-merge result would have held.
+        ranked.append(chunk.chunk_id)
+        ranked.extend(chunk.metadata.get("merged_chunk_ids", ()))
     return RetrievalScores(
         recall={k: recall_at_k(ranked, gold, k) for k in ks},
         ndcg={k: ndcg_at_k(ranked, gold, k) for k in ks},

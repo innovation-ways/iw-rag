@@ -52,6 +52,8 @@ class RetrievalConfig:
             generator's ``max_model_len`` (see I-00131 design §"Budget sizing
             constraint").  Mirrors :attr:`RetrievalSettings.parent_expansion_max_chars`.
         rerank_on_failure: ``degrade`` (fused order) or ``fail``.
+        section_hits: Whether a section (parent) row may match on its own and be a
+            candidate.  ``False`` leaves only leaves; ``expansion_mode="leaf"`` does the same.
     """
 
     candidate_k: int = 40
@@ -62,6 +64,131 @@ class RetrievalConfig:
     expansion_mode: str = "parent"
     parent_expansion_max_chars: int = 4000
     rerank_on_failure: str = "degrade"
+    section_hits: bool = True
+
+
+def expand_to_parent(
+    chunk: RetrievedChunk, parent_content: str | None, budget_chars: int
+) -> RetrievedChunk:
+    """Apply the small-to-big rule to one reranked leaf.
+
+    The leaf's ``content`` becomes its parent's full text (the original leaf text is
+    kept in ``leaf_content``) **only when** the parent fits ``budget_chars``.  An
+    oversized parent (e.g. a whole-document parent for a PDF without heading
+    structure) leaves the chunk unchanged apart from ``leaf_content``, so the matched
+    text is always present and no candidate overflows the generator's window.  A chunk
+    with no parent is returned as is.
+
+    Args:
+        chunk: The reranked leaf.
+        parent_content: The parent's text, or ``None`` when the leaf has no parent.
+        budget_chars: Per-candidate character budget
+            (:attr:`RetrievalConfig.parent_expansion_max_chars`).
+
+    Returns:
+        The chunk to hand to the generator.
+    """
+    if parent_content is None:
+        return chunk
+    if len(parent_content) > budget_chars:
+        logger.debug(
+            "spine.expand_to_parent: skipping oversized parent (parent_chars=%d > budget=%d); "
+            "keeping leaf content",
+            len(parent_content),
+            budget_chars,
+        )
+        return replace(chunk, leaf_content=chunk.content)
+    return replace(chunk, content=parent_content, leaf_content=chunk.content)
+
+
+def keep_candidate(
+    chunk_id: str,
+    content: str,
+    section_ids: frozenset[str],
+    *,
+    expansion_mode: str,
+    section_hits: bool,
+    budget_chars: int,
+) -> str | None:
+    """Decide whether a fused candidate may go on to the reranker.
+
+    Only section (parent) rows can be set aside; a leaf is always eligible.  A section row is
+    set aside when sections are switched off, when the spine returns leaves only
+    (``expansion_mode="leaf"``), or when the section is longer than the per-candidate budget:
+    it could never be handed to the generator whole, and its leaves are still candidates.
+
+    Args:
+        chunk_id: The candidate's id.
+        content: The candidate's text.
+        section_ids: The ids, among the candidates, of rows that have children (sections).
+        expansion_mode: ``leaf``, ``parent`` or ``window``.
+        section_hits: The ``retrieval.section_hits`` switch.
+        budget_chars: The per-candidate character budget.
+
+    Returns:
+        ``None`` to keep the candidate, otherwise why it is set aside: ``"section_hits_off"``,
+        ``"leaf_only"`` or ``"oversize"``.
+    """
+    if chunk_id not in section_ids:
+        return None
+    if not section_hits:
+        return "section_hits_off"
+    if expansion_mode == "leaf":
+        return "leaf_only"
+    if len(content) > budget_chars:
+        return "oversize"
+    return None
+
+
+def merge_repeated_sections(
+    chunks: list[RetrievedChunk], section_ids: frozenset[str], top_k: int
+) -> tuple[list[RetrievedChunk], int]:
+    """Collapse chunks of one section that carry identical text, then keep ``top_k``.
+
+    After small-to-big expansion every selected leaf of a section holds the section's text, and
+    the section row itself may be selected too.  Chunks are walked in rank order; a chunk
+    whose final text equals an earlier chunk of the same section is merged into it: the
+    earlier chunk keeps its rank and score, adopts the leaf text as ``leaf_content`` when it
+    has none (so a citation still quotes the matched leaf), and lists the merged ids in
+    ``metadata["merged_chunk_ids"]``.  Because merging happens before the cut, the freed
+    slots go to the next distinct chunks.
+
+    Args:
+        chunks: Reranked (and expanded) chunks, best first.
+        section_ids: The ids, among the candidates, of rows that have children (sections).
+        top_k: How many distinct chunks to return.
+
+    Returns:
+        ``(chunks, merged)``: at most ``top_k`` distinct chunks in rank order, and how many
+        repeats were merged away.
+    """
+    out: list[RetrievedChunk] = []
+    seen: dict[tuple[str, str], int] = {}
+    merged = 0
+    for chunk in chunks:
+        parent = chunk.metadata.get("parent_id")
+        section = (
+            str(parent) if parent else (chunk.chunk_id if chunk.chunk_id in section_ids else None)
+        )
+        slot = (section, chunk.content) if section is not None else None
+        if slot is not None and slot in seen:
+            kept = out[seen[slot]]
+            ids = [*kept.metadata.get("merged_chunk_ids", []), chunk.chunk_id]
+            out[seen[slot]] = replace(
+                kept,
+                leaf_content=kept.leaf_content
+                if kept.leaf_content is not None
+                else chunk.leaf_content,
+                metadata={**kept.metadata, "merged_chunk_ids": ids},
+            )
+            merged += 1
+            continue
+        if len(out) >= top_k:
+            break
+        if slot is not None:
+            seen[slot] = len(out)
+        out.append(chunk)
+    return out, merged
 
 
 class RetrievalSpine:
@@ -145,29 +272,49 @@ class RetrievalSpine:
                 top_fused = fused[: self._cfg.fused_k]
             repo = ChunkRepository(session)
             cand_rows = await repo.get_retrievable([uuid.UUID(h.chunk_id) for h in top_fused])
-            candidates = [
-                RerankCandidate(chunk_id=str(r["id"]), content=r["content"]) for r in cand_rows
-            ]
+            section_ids = await repo.get_section_ids([r["id"] for r in cand_rows])
+            set_aside: dict[str, int] = {}
+            candidates = []
+            for r in cand_rows:
+                why = keep_candidate(
+                    str(r["id"]),
+                    r["content"],
+                    section_ids,
+                    expansion_mode=self._cfg.expansion_mode,
+                    section_hits=self._cfg.section_hits,
+                    budget_chars=self._cfg.parent_expansion_max_chars,
+                )
+                if why is None:
+                    candidates.append(RerankCandidate(chunk_id=str(r["id"]), content=r["content"]))
+                else:
+                    set_aside[why] = set_aside.get(why, 0) + 1
+            if set_aside:
+                diagnostics["sections_set_aside"] = set_aside
 
+            # Every candidate is scored (the reranker reads them all anyway); the cut to top_k
+            # happens after repeats are merged, so a merged slot is refilled by the next chunk.
             with span(
                 "iw_rag.retrieval.rerank",
                 {"candidates": len(candidates), "top_k": self._cfg.top_k},
                 span_kind="RERANKER",
             ):
                 try:
-                    scored = await self._reranker.rerank(query, candidates, self._cfg.top_k)
+                    scored = await self._reranker.rerank(query, candidates, len(candidates))
                 except RerankError:
                     if self._cfg.rerank_on_failure == "fail":
                         raise
                     diagnostics["rerank"] = "degraded"
                     scored = [
                         ScoredChunk(chunk_id=c.chunk_id, score=1.0 / (i + 1))
-                        for i, c in enumerate(candidates[: self._cfg.top_k])
+                        for i, c in enumerate(candidates)
                     ]
 
             chunks = await self._materialize(repo, scored)
             if self._cfg.expansion_mode != "leaf":
                 chunks = await self._expand_parents(repo, chunks)
+            chunks, merged = merge_repeated_sections(chunks, section_ids, self._cfg.top_k)
+            if merged:
+                diagnostics["repeats_merged"] = merged
 
         return RetrievalResult(
             chunks=chunks,
@@ -253,22 +400,5 @@ class RetrievalSpine:
         for c in chunks:
             pid = c.metadata.get("parent_id")
             parent = parent_rows.get(pid) if pid else None
-            if parent is None:
-                expanded.append(c)
-                continue
-            parent_content = parent["content"]
-            if len(parent_content) > budget:
-                # Oversized parent (e.g. whole-document parent for an uploaded
-                # PDF without headings) — keep the leaf so the matched text
-                # is preserved and the candidate stays within the budget.
-                logger.debug(
-                    "spine._expand_parents: skipping oversized parent "
-                    "(parent_id=%s, parent_chars=%d > budget=%d); keeping leaf content",
-                    pid,
-                    len(parent_content),
-                    budget,
-                )
-                expanded.append(replace(c, leaf_content=c.content))
-                continue
-            expanded.append(replace(c, content=parent_content, leaf_content=c.content))
+            expanded.append(expand_to_parent(c, parent["content"] if parent else None, budget))
         return expanded

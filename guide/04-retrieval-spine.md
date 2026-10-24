@@ -241,6 +241,32 @@ flowchart TD
   > same join that carries `source_uri`). Functionally equivalent for expansion;
   > the `get_parents` helper is currently unused by the spine.
 
+### Section rows: which are candidates, and merging repeats (CR-00103)
+
+Ingestion also stores each **section** (parent) as a searchable row, with the mean of its
+leaves' vectors, so a section can match a broad question when no single leaf does. Three rules
+keep that useful without waste:
+
+- **Which section rows are candidates.** After fusion the spine asks which candidates are
+  sections (a row is a section when another row points at it, answered by the indexed
+  `chunks_parent` lookup, so no schema change). A section row is set aside before the reranker
+  when `expansion_mode="leaf"` (leaves only), when `retrieval.section_hits` is `false`, or when it
+  is longer than `parent_expansion_max_chars` and so could never be handed over whole. Its
+  leaves stay candidates. See `keep_candidate`; the sizes set aside are reported in
+  `diagnostics["sections_set_aside"]`.
+- **Merging repeats.** After expansion, every selected leaf of a section holds the section's
+  text, and the section row may be selected too. Chunks of one section with identical final text
+  are merged into the best-ranked one, *before* the cut to `top_k`, so the freed slots go to the
+  next distinct chunks. The merged chunk keeps the matched leaf as `leaf_content` (citations stay
+  precise) and lists the others in `metadata["merged_chunk_ids"]`. See `merge_repeated_sections`
+  and `diagnostics["repeats_merged"]`.
+- **Metrics.** `score_retrieval` counts a merged chunk as every id it covers, listed right after
+  it, so retrieval metrics stay comparable with results from before the change.
+
+Measured on the benchmark corpus (34 gold questions, 8 chunks returned): distinct passages per
+query rose from 4.2 to 7.9 and repeated texts fell from 130 to 3, with recall@10 unchanged at
+0.779 (nDCG@5 0.778 vs 0.777, MRR 0.853 vs 0.846).
+
 ### A note on concurrency
 
 The LLD diagram shows the two arms running *in parallel*. The shipped spine runs
@@ -442,6 +468,7 @@ All under `Settings.retrieval`
 | `sparse_arm` | `bm25` | `bm25` / `learned_sparse` | Which sparse arm. Only `bm25` is wired today (see §2 gap note) |
 | `expansion_mode` | `parent` | `leaf` / `parent` / `window` | `leaf` = no expansion; `parent` = small-to-big; `window` = neighbour window |
 | `rerank_on_failure` | `degrade` | `degrade` / `fail` | On reranker outage: degrade to fused order, or fail the query |
+| `section_hits` | `true` | `true` / `false` | Whether a section (parent) row may match on its own. `false` leaves only leaves (CR-00103); `expansion_mode="leaf"` does the same |
 | `rerank_model` | `reranker` | models.yaml role | Logical reranker role → resolved to an endpoint/model |
 | `embed_model` | `embedder` | models.yaml role | Logical embedder role → resolved to an endpoint/model |
 

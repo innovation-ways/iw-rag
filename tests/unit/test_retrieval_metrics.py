@@ -91,3 +91,41 @@ def test_score_retrieval_does_not_resort() -> None:
     assert scores.k_values == (5, 10)
     # nDCG matches the primitive on the same order (no re-sort)
     assert scores.ndcg[10] == pytest.approx(ndcg_at_k(["a", "x", "b"], ["a", "b"], 10))
+
+
+def _merged_result() -> RetrievalResult:
+    """Rank 1 is a section that absorbed leaf ``L1``; rank 2 is an unrelated chunk."""
+    section = RetrievedChunk(
+        chunk_id="S1",
+        document_id="d",
+        content="section",
+        score=1.0,
+        source_uri="x",
+        metadata={"merged_chunk_ids": ["L0", "L1"]},
+    )
+    other = RetrievedChunk(chunk_id="x", document_id="d", content="o", score=0.5, source_uri="x")
+    return RetrievalResult(chunks=[section, other], retriever="spine", acl_applied=True)
+
+
+def test_a_chunk_that_absorbed_repeats_counts_as_each_id_it_covers() -> None:
+    # Expanded ranking: S1, L0, L1, x.
+    scores = score_retrieval(_merged_result(), ["S1", "L0", "L1"], ks=(3, 5))
+    assert scores.recall[3] == pytest.approx(1.0)  # all three ids were delivered in one chunk
+    assert scores.mrr == pytest.approx(1.0)
+    assert scores.ndcg[5] == pytest.approx(
+        ndcg_at_k(["S1", "L0", "L1", "x"], ["S1", "L0", "L1"], 5)
+    )
+
+
+def test_merged_ids_follow_their_representative_and_do_not_invent_hits() -> None:
+    result = _merged_result()
+    assert score_retrieval(result, ["L1"], ks=(5,)).mrr == pytest.approx(1 / 3)  # S1, L0, then L1
+    assert score_retrieval(result, ["x"], ks=(5,)).mrr == pytest.approx(1 / 4)
+    assert score_retrieval(result, ["nowhere"], ks=(5,)).recall[5] == 0.0
+
+
+def test_a_result_with_no_merges_is_scored_exactly_as_before() -> None:
+    plain = _result(["a", "x", "b"])
+    scores = score_retrieval(plain, ["a", "b"], ks=(5,))
+    assert scores.recall[5] == pytest.approx(recall_at_k(["a", "x", "b"], ["a", "b"], 5))
+    assert scores.ndcg[5] == pytest.approx(ndcg_at_k(["a", "x", "b"], ["a", "b"], 5))

@@ -84,6 +84,9 @@ class _FakeChunkRepository:
         ids = {str(cid) for cid in chunk_ids}
         return [_ROW] if str(_ROW["id"]) in ids else []
 
+    async def get_section_ids(self, chunk_ids: list[uuid.UUID]) -> frozenset[str]:
+        return frozenset()  # no section rows in this fixture
+
 
 class _FakeSession:
     """Minimal AsyncSession stand-in (the fake repo doesn't actually use it)."""
