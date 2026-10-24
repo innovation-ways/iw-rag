@@ -437,7 +437,7 @@ async def test_chunks_acl_gin_index_exists_in_schema(
         with engine.connect() as conn:
             row = conn.execute(
                 text(
-                    "SELECT indexname FROM pg_indexes "
+                    "SELECT indexname, indexdef FROM pg_indexes "
                     "WHERE schemaname = 'iw_rag' AND tablename = 'chunks' "
                     "AND indexname = 'chunks_acl_gin'"
                 )
@@ -449,6 +449,10 @@ async def test_chunks_acl_gin_index_exists_in_schema(
         "chunks_acl_gin index must exist on iw_rag.chunks (required for the "
         "GIN-accelerated pre-filter, INVARIANT 2)."
     )
+    # It must be a GIN index on the acl_tags column itself (the array-overlap pre-filter),
+    # not just an index that happens to carry the name.
+    assert row.indexname == "chunks_acl_gin"
+    assert row.indexdef.split(" USING ", 1)[1].startswith("gin (acl_tags)"), row.indexdef
 
 
 # ---------------------------------------------------------------------------

@@ -146,11 +146,11 @@ def test_per_mode_probes_cover_both_directions() -> None:
         ("visual", probes.ACL_INJECTION_PROBES_VISUAL),
     ):
         tokens = {p.principal_token for p in probe_list}
-        assert "demo-hr" in tokens, (
-            f"{label} probe list must include an HR principal (probing finance)"
-        )
-        assert "demo-finance" in tokens, (
-            f"{label} probe list must include a finance principal (probing hr)"
+        # Both directions: an HR principal probing finance, and a finance principal probing HR.
+        required = {"demo-hr", "demo-finance"}
+        assert tokens & required == required, (
+            f"{label} probe list must include both an HR principal (probing finance) and a "
+            f"finance principal (probing hr); got {sorted(tokens)}"
         )
 
 

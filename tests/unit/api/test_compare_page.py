@@ -405,12 +405,11 @@ def test_compare_page_html_sort_indicator_glyphs() -> None:
     """sortInd() returns ▾ for inactive columns, ▲ for asc, ▼ for desc."""
     script = _compare_page_script()
     body = _function_body(script, "sortInd")
-    # Inactive column glyph: ▾ (default)
-    assert "▾" in body, "sortInd() must return ▾ for inactive columns"
-    # Active asc: ▲
-    assert "▲" in body, "sortInd() must return ▲ for active asc"
-    # Active desc: ▼
-    assert "▼" in body, "sortInd() must return ▼ for active desc"
+    inactive = re.search(r'key !== sortKey\)\s*\{\s*return "(.)";', body)
+    active = re.search(r'sortDir === "asc" \? "(.)" : "(.)"', body)
+    assert inactive is not None and active is not None, body
+    # Pin each glyph to its role: inactive column, active ascending, active descending.
+    assert (inactive.group(1), active.group(1), active.group(2)) == ("▾", "▲", "▼")
 
 
 def test_compare_page_html_pager_buttons_have_disabled_boundary_logic() -> None:

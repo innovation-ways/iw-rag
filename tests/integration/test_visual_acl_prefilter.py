@@ -445,10 +445,16 @@ async def test_visual_stage1_prefetch_uses_acl_gin_index(
     finally:
         engine.dispose()
 
-    assert "visual_pages_acl_gin" in plan_text, (
-        f"EXPLAIN must show visual_pages_acl_gin in the plan (GIN-accelerated "
+    lines = [ln.strip() for ln in plan_text.splitlines()]
+    gin_scans = [
+        ln for ln in lines if ln.startswith("->  Bitmap Index Scan on visual_pages_acl_gin")
+    ]
+    assert len(gin_scans) == 1, (
+        f"EXPLAIN must show exactly one scan of visual_pages_acl_gin (GIN-accelerated "
         f"pre-filter, INVARIANT 1).  Plan:\n{plan_text}"
     )
+    # ...and that scan must be driven by the ACL overlap predicate itself.
+    assert lines[lines.index(gin_scans[0]) + 1].startswith("Index Cond: (acl_tags &&"), plan_text
 
 
 @pytest.mark.integration
