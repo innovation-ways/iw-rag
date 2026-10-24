@@ -400,7 +400,7 @@ class AgeGraphStore:
             )
             for (name,) in rows:
                 if name not in resolved:
-                    resolved.append(name)
+                    resolved.append(str(name))
         return resolved or list(seeds)
 
     async def query_subgraph(self, seeds: Sequence[str], hops: int = 2) -> RawGraphContext:

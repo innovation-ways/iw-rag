@@ -23,6 +23,8 @@ repos:
           - "httpx>=0.27"
           - "fastapi>=0.115"
           - "playwright>=1.40"
+          - "numpy"            # eval/benchmark/stats.py (scipy is stub-ignored in pyproject)
+          - "opentelemetry-sdk"  # observability/tracing.py (lazy-imported, typed)
         args: [--strict]
         files: ^src/iw_rag/
   - repo: https://github.com/gitleaks/gitleaks
