@@ -19,34 +19,48 @@ the page factory into an :class:`HTMLResponse` (mirrors
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from iw_rag.api.benchmark_runner_page import benchmark_runner_page_html
 from iw_rag.api.compare_page import compare_page_html
 from iw_rag.api.config_page import config_page_html
 from iw_rag.api.console_chat_page import console_chat_page_html
-from iw_rag.api.console_page import console_page_html
 from iw_rag.api.console_upload_page import console_upload_page_html
+from iw_rag.api.learn_page import learn_glossary_html, learn_hub_html, learn_lesson_html
 from iw_rag.api.results_page import results_page_html
 from iw_rag.api.scoreboard_page import scoreboard_page_html
 from iw_rag.api.system_page import system_page_html
+from iw_rag.learn.lessons import get_lesson
 
 console_router = APIRouter()
 
 
-@console_router.get("/console", response_class=HTMLResponse, include_in_schema=False)
-async def console_ui() -> HTMLResponse:
-    """Serve the Operator Console shell page (handles its own login).
+@console_router.get("/console", include_in_schema=False)
+async def console_ui() -> RedirectResponse:
+    """Send ``/console`` to the Learn hub, the console's front door."""
+    return RedirectResponse(url="/console/learn", status_code=307)
 
-    The S10 page owns the body — the IW brand chrome, the unified
-    six-item nav, the ``/auth/login`` self-handled sign-in, the
-    location-derived API base, the sessionStorage-only bearer token,
-    and the ``#viewContent`` region the S11–S15 sub-view partials
-    load into.  This route just wires the response (mirrors
-    :func:`iw_rag.api.benchmark_routes.benchmark_ui`).
-    """
-    return HTMLResponse(content=console_page_html())
+
+@console_router.get("/console/learn", response_class=HTMLResponse, include_in_schema=False)
+async def console_learn_ui() -> HTMLResponse:
+    """Serve the Learn hub: a beginner's map of the RAG pipeline."""
+    return HTMLResponse(content=learn_hub_html())
+
+
+@console_router.get("/console/learn/glossary", response_class=HTMLResponse, include_in_schema=False)
+async def console_learn_glossary_ui() -> HTMLResponse:
+    """Serve the Learn glossary."""
+    return HTMLResponse(content=learn_glossary_html())
+
+
+@console_router.get("/console/learn/{slug}", response_class=HTMLResponse, include_in_schema=False)
+async def console_learn_lesson_ui(slug: str) -> HTMLResponse:
+    """Serve one Learn lesson; 404 for an unknown step."""
+    lesson = get_lesson(slug)
+    if lesson is None:
+        raise HTTPException(status_code=404, detail="Unknown lesson")
+    return HTMLResponse(content=learn_lesson_html(lesson))
 
 
 @console_router.get("/console/config", response_class=HTMLResponse, include_in_schema=False)

@@ -545,6 +545,7 @@ def create_app(
     from iw_rag.api.config_routes import config_router
     from iw_rag.api.console_routes import console_router
     from iw_rag.api.documents_routes import documents_router
+    from iw_rag.api.learn_routes import learn_router
     from iw_rag.api.models_routes import models_router
     from iw_rag.api.scoreboard_routes import scoreboard_router
     from iw_rag.api.system_routes import system_router
@@ -555,6 +556,7 @@ def create_app(
     app.include_router(config_router)
     app.include_router(scoreboard_router)
     app.include_router(system_router)
+    app.include_router(learn_router)
     app.include_router(console_router)
 
     # Start the idle auto-unload monitor once an event loop is running.  No-op

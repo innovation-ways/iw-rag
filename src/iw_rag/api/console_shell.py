@@ -42,6 +42,8 @@ tokens and appear exactly once each — keep them out of prose/comments so a
 
 from __future__ import annotations
 
+from iw_rag.api.console_nav import apply_console_nav
+
 # Innovation Ways mark as an inline SVG data-URI favicon, shared by every console
 # document — the shared shell (Chat/Upload) *and* the standalone pages that build
 # their own <head> (Console/Config/Benchmark/Runner/Results/Scoreboard/Documents).
@@ -165,16 +167,7 @@ __EXTRA_CSS__
   <button class="btn-ghost hidden" id="logout">Sign out</button>
 </header>
 
-<nav class="console-nav hidden" id="consoleNav" aria-label="Console navigation">
-  <a class="nav-item" id="navConfig" href="/console/config">Config</a>
-  <a class="nav-item" id="navBenchmark" href="/console/benchmark">Benchmark</a>
-  <a class="nav-item" id="navResults" href="/console/results">Results</a>
-  <a class="nav-item" id="navCompare" href="/console/compare">Compare</a>
-  <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
-  <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
-  <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
-  <a class="nav-item" id="navSystem" href="/console/system">System</a>
-</nav>
+__CONSOLE_NAV__
 
 <main class="main-wrap">
   <section id="loginView" class="hidden">
@@ -314,7 +307,7 @@ def render_console_page(*, title: str, extra_css: str, body: str, view_js: str) 
     Returns:
         A complete, self-contained HTML document string.
     """
-    return (
+    return apply_console_nav(
         _SHELL.replace("__TITLE__", title)
         .replace("__FAVICON__", FAVICON_LINK)
         .replace("__EXTRA_CSS__", extra_css)

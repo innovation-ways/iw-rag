@@ -45,6 +45,7 @@ against :func:`config_page_html`.
 
 from __future__ import annotations
 
+from iw_rag.api.console_nav import apply_console_nav
 from iw_rag.api.console_shell import add_favicon
 
 _PAGE = r"""<!doctype html>
@@ -135,16 +136,7 @@ _PAGE = r"""<!doctype html>
   <button class="btn-ghost hidden" id="logout">Sign out</button>
 </header>
 
-<nav class="console-nav hidden" id="consoleNav" aria-label="Console navigation">
-  <a class="nav-item" id="navConfig" href="/console/config">Config</a>
-  <a class="nav-item" id="navBenchmark" href="/console/benchmark">Benchmark</a>
-  <a class="nav-item" id="navResults" href="/console/results">Results</a>
-  <a class="nav-item" id="navCompare" href="/console/compare">Compare</a>
-  <a class="nav-item" id="navScoreboard" href="/console/scoreboard">Scoreboard</a>
-  <a class="nav-item" id="navChat" href="/console/chat">Chat</a>
-  <a class="nav-item" id="navUpload" href="/console/upload">Upload</a>
-  <a class="nav-item" id="navSystem" href="/console/system">System</a>
-</nav>
+__CONSOLE_NAV__
 
 <main>
   <section id="loginView" class="hidden">
@@ -434,7 +426,7 @@ def config_page_html() -> str:
         The raw, self-contained HTML document as a ``str`` (no MIME /
         static-mount wiring required).
     """
-    return add_favicon(_PAGE)
+    return apply_console_nav(add_favicon(_PAGE))
 
 
 __all__ = ["config_page_html"]

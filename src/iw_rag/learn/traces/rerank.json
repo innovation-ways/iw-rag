@@ -1,0 +1,3591 @@
+{
+ "recorded": "2026-10-23",
+ "git_commit": "fac4eb3",
+ "embedder": "BAAI/bge-m3",
+ "reranker": "BAAI/bge-reranker-v2-m3",
+ "leaf_chars": 420,
+ "candidate_k": 40,
+ "fused_k": 80,
+ "top_k": 8,
+ "rrf_k": 60,
+ "parent_budget_chars": 4000,
+ "embedding_note": "Leaves were embedded one by one through the served endpoint, without late chunking; each parent's vector is the normalised mean of its leaves.",
+ "parents": [
+  {
+   "id": "S1",
+   "uuid": "269db150-a890-5969-90c0-6cc099d490fb",
+   "doc": "travel_policy.md",
+   "title": "Travel policy",
+   "section": "Northwind travel policy > Booking",
+   "text": "Book flights and hotels through the travel portal at least 14 days before departure. Fares above 600 EUR for a single journey need written approval from the department head before the booking is confirmed.\nRail is preferred for trips under four hours. Economy class applies to every flight under six hours; premium economy may be used above that, and business class is never booked."
+  },
+  {
+   "id": "S2",
+   "uuid": "f18e5b40-48a9-5407-a38b-200e7d43cf61",
+   "doc": "travel_policy.md",
+   "title": "Travel policy",
+   "section": "Northwind travel policy > Meals and hotels",
+   "text": "Meals while travelling are covered up to 60 EUR per day, with receipts. Alcohol is never reimbursed, and neither are minibar items or room service ordered after 22:00.\nHotel stays up to 180 EUR per night are approved automatically. Anything above that amount needs prior approval from the finance controller, and the approval must be attached to the claim."
+  },
+  {
+   "id": "S3",
+   "uuid": "8bf5e592-2748-5de1-9773-8c8bf2d61979",
+   "doc": "travel_policy.md",
+   "title": "Travel policy",
+   "section": "Northwind travel policy > Claims and deadlines",
+   "text": "Expense claims cover every cost paid personally during a business trip. Submit them in the expenses tool with a receipt for each item, grouped by trip.\nIt must be filed within 30 days of the trip's last day. Claims filed after that date are paid only with the finance controller's written exception, and never later than 90 days.\nApproved claims are paid with the next payroll run. The money arrives within 30 days of submission, and the payslip shows each item separately."
+  },
+  {
+   "id": "S4",
+   "uuid": "1e5f6b2a-2f01-5bf4-a796-3bc86bdd20aa",
+   "doc": "travel_policy.md",
+   "title": "Travel policy",
+   "section": "Northwind travel policy > Cancellations",
+   "text": "If a trip is cancelled, cancel the booking in the portal the same day. Non-refundable fares are charged to the department, not to the traveller, unless the cancellation was personal.\nA trip cancelled less than 48 hours before departure must be reported to the travel desk by phone, because the portal blocks changes inside that window."
+  },
+  {
+   "id": "S5",
+   "uuid": "aa20d7dc-64f9-5743-8fba-2d693ee3309a",
+   "doc": "expense_faq.md",
+   "title": "Expenses FAQ",
+   "section": "Expenses FAQ > Common questions",
+   "text": "Can I claim a taxi to the airport? Yes, when public transport is unavailable or the journey starts before 06:00. Keep the receipt and write the reason on the claim.\nAre tips reimbursed? Tips up to 10% of a restaurant bill are reimbursed, with the receipt. Tips anywhere else are not.\nWho approves my expense claim? Your line manager approves claims up to 1,000 EUR, and the finance controller approves everything above that amount.\nHow do I claim mileage for my own car? Record the distance in the expenses tool; the rate is 0.36 EUR per kilometre."
+  },
+  {
+   "id": "S6",
+   "uuid": "1632b67c-62f1-59a8-b7bc-580af89189b4",
+   "doc": "expense_faq.md",
+   "title": "Expenses FAQ",
+   "section": "Expenses FAQ > Corporate cards",
+   "text": "Corporate cards are issued to employees who travel more than six times a year. Card statements are reconciled monthly, and unexplained charges are deducted from the next payroll.\nLost cards must be reported to the card provider at once and to the finance team within 24 hours."
+  },
+  {
+   "id": "S7",
+   "uuid": "d97f21c2-e777-5fab-b512-874eebadb963",
+   "doc": "invoices.md",
+   "title": "Invoices",
+   "section": "Invoices > September 2026",
+   "text": "Invoice INV-2026-0931 was issued to Contoso Ltd. on 12 September 2026. The total due is 15,000 USD, payable within 30 days.\nInvoice INV-2026-0877 was issued to Fabrikam Inc. on 2 September 2026. The total due is 8,200 USD, payable within 45 days.\nInvoice INV-2026-0912 was issued to Adventure Works on 9 September 2026. The total due is 23,750 USD, payable within 30 days.\nInvoice INV-2026-0954 was issued to Northwind Traders on 18 September 2026. The total due is 4,900 USD, payable within 60 days.\nInvoice INV-2026-0968 was issued to Tailspin Toys on 22 September 2026. The total due is 11,300 USD, payable within 30 days."
+  },
+  {
+   "id": "S8",
+   "uuid": "0f1d7d06-7707-58e4-8ce2-96663c7cdb46",
+   "doc": "handbook.md",
+   "title": "Handbook (no headings)",
+   "section": "(no heading)",
+   "text": "Welcome to the Lisbon office. The building is open from 08:00 to 19:00 on weekdays, and the kitchen on the second floor is shared by every team. Please leave it as you would like to find it.\nEvery employee receives an access badge on the first day. The badge opens the front door, the parking garage and the meeting rooms, and it also works at the printers, where it releases your documents.\nIt must be handed back to reception on the last working day, and it stops working at midnight. A lost one is replaced for a fee of 15 EUR, which is waived for the first loss in a calendar year.\nVisitors must register at reception and wear a visitor sticker at all times. Hosts are responsible for collecting their guests and for making sure they leave before 19:00.\nBicycles may be parked in the garage on level minus one. The racks are first come, first served, and unclaimed bicycles are removed after thirty days with a note on the handlebars.\nMeeting rooms are booked in the calendar and released automatically if nobody checks in within ten minutes. The large room on the third floor is reserved for the all-hands every second Thursday.\nPrinters are shared. Colour printing is disabled by default and can be enabled per document, which is logged. Confidential documents should be collected immediately and never left in the tray.\nLunch is not provided, but the second-floor kitchen has a fridge, two microwaves and a coffee machine that is cleaned every Friday afternoon by the facilities team, who also water the plants.\nThe office is cleaned in the evenings. Please clear your desk of food and open drinks before you leave, and lock away anything valuable, because cleaners have access to every floor after 19:00.\nFire exits are marked on every floor and tested on the first Monday of each quarter. When the alarm sounds, leave by the nearest stairs, never by the lift, and gather at the square opposite the main entrance.\nQuestions about the building go to the facilities team on the first floor, and questions about equipment go to IT. Both teams answer messages within one working day and are available in person on weekdays.\nPost and parcels are delivered to the front desk between 09:00 and 17:00. Personal parcels are accepted for up to five working days, after which they are returned to the sender, so please collect them promptly.\nLaptops are issued by IT on the first day and remain the property of the company. Report a damaged or stolen laptop to IT within 24 hours, and never install software that has not been approved in the software catalogue.\nRemote work is possible up to three days a week by agreement with your manager. On days in the office, desks are shared and booked in the calendar, and personal items must be taken home in the evening.\nThe quiet room on the fourth floor is for focused work and phone calls are not allowed there. The phone booths on the second floor can be used without booking, for a maximum of thirty minutes at a time.\nPlants, pictures and small personal items are welcome at shared desks, but nothing may be fixed to walls or glass. Facilities will remove anything that blocks a fire exit, a sprinkler or a camera.\nThe company holds a garden party each June and a winter dinner each December. Invitations are sent by email four weeks ahead, and employees may bring one guest to each event.\nFeedback about the office is always welcome. Use the suggestion box in the kitchen or write to the facilities team, who review every suggestion at their monthly meeting and publish the outcome on the intranet.\nCharging points for electric cars are available on level minus two and are shared by everyone. A car may stay connected for at most four hours, after which it must be moved so that the next colleague can charge.\nFirst aid kits are kept in the kitchen and at reception, and trained first aiders are listed on the intranet. Any accident, however small, should be reported to facilities the same day so that it can be recorded.\nSmoking is not permitted anywhere in the building or within five metres of the entrance. A designated area is available in the courtyard behind the garage."
+  }
+ ],
+ "leaves": [
+  {
+   "id": "L01",
+   "uuid": "f7aad287-0232-5982-947b-4e791034b1c3",
+   "parent": "S1",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Booking",
+   "text": "Book flights and hotels through the travel portal at least 14 days before departure. Fares above 600 EUR for a single journey need written approval from the department head before the booking is confirmed."
+  },
+  {
+   "id": "L02",
+   "uuid": "6c564633-bea8-549c-81d3-04dfdcca2bae",
+   "parent": "S1",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Booking",
+   "text": "Rail is preferred for trips under four hours. Economy class applies to every flight under six hours; premium economy may be used above that, and business class is never booked."
+  },
+  {
+   "id": "L03",
+   "uuid": "81ba606d-be61-5ca3-b723-8782fa16ddf6",
+   "parent": "S2",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Meals and hotels",
+   "text": "Meals while travelling are covered up to 60 EUR per day, with receipts. Alcohol is never reimbursed, and neither are minibar items or room service ordered after 22:00."
+  },
+  {
+   "id": "L04",
+   "uuid": "7bd228b4-95a4-53f9-9b50-0dd5f3a795db",
+   "parent": "S2",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Meals and hotels",
+   "text": "Hotel stays up to 180 EUR per night are approved automatically. Anything above that amount needs prior approval from the finance controller, and the approval must be attached to the claim."
+  },
+  {
+   "id": "L05",
+   "uuid": "913d4ae3-5c93-56f5-98c0-59e98e271d64",
+   "parent": "S3",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Claims and deadlines",
+   "text": "Expense claims cover every cost paid personally during a business trip. Submit them in the expenses tool with a receipt for each item, grouped by trip."
+  },
+  {
+   "id": "L06",
+   "uuid": "265b1808-242b-54a2-bc26-9ad2cab03dce",
+   "parent": "S3",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Claims and deadlines",
+   "text": "It must be filed within 30 days of the trip's last day. Claims filed after that date are paid only with the finance controller's written exception, and never later than 90 days."
+  },
+  {
+   "id": "L07",
+   "uuid": "ac83054b-f0a5-5c49-afd9-6f396aeece9d",
+   "parent": "S3",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Claims and deadlines",
+   "text": "Approved claims are paid with the next payroll run. The money arrives within 30 days of submission, and the payslip shows each item separately."
+  },
+  {
+   "id": "L08",
+   "uuid": "a514d6d6-8743-5404-8249-7943391ba0d0",
+   "parent": "S4",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Cancellations",
+   "text": "If a trip is cancelled, cancel the booking in the portal the same day. Non-refundable fares are charged to the department, not to the traveller, unless the cancellation was personal."
+  },
+  {
+   "id": "L09",
+   "uuid": "37a4454a-727f-593f-be10-cad6eeddb3a6",
+   "parent": "S4",
+   "doc": "travel_policy.md",
+   "section": "Northwind travel policy > Cancellations",
+   "text": "A trip cancelled less than 48 hours before departure must be reported to the travel desk by phone, because the portal blocks changes inside that window."
+  },
+  {
+   "id": "L10",
+   "uuid": "b986d009-c777-57c4-bd21-d78d1b1e5471",
+   "parent": "S5",
+   "doc": "expense_faq.md",
+   "section": "Expenses FAQ > Common questions",
+   "text": "Can I claim a taxi to the airport? Yes, when public transport is unavailable or the journey starts before 06:00. Keep the receipt and write the reason on the claim."
+  },
+  {
+   "id": "L11",
+   "uuid": "b0002fa0-f96d-5e28-b07f-3ab6b6facf3b",
+   "parent": "S5",
+   "doc": "expense_faq.md",
+   "section": "Expenses FAQ > Common questions",
+   "text": "Are tips reimbursed? Tips up to 10% of a restaurant bill are reimbursed, with the receipt. Tips anywhere else are not."
+  },
+  {
+   "id": "L12",
+   "uuid": "33f23cf4-be7f-5453-ab60-97bdbdbb481a",
+   "parent": "S5",
+   "doc": "expense_faq.md",
+   "section": "Expenses FAQ > Common questions",
+   "text": "Who approves my expense claim? Your line manager approves claims up to 1,000 EUR, and the finance controller approves everything above that amount."
+  },
+  {
+   "id": "L13",
+   "uuid": "f6ce7fa7-b821-5033-adaa-580a1aa99564",
+   "parent": "S5",
+   "doc": "expense_faq.md",
+   "section": "Expenses FAQ > Common questions",
+   "text": "How do I claim mileage for my own car? Record the distance in the expenses tool; the rate is 0.36 EUR per kilometre."
+  },
+  {
+   "id": "L14",
+   "uuid": "8ec1ca5c-2107-51a5-a3ca-6e8a4d5f0d58",
+   "parent": "S6",
+   "doc": "expense_faq.md",
+   "section": "Expenses FAQ > Corporate cards",
+   "text": "Corporate cards are issued to employees who travel more than six times a year. Card statements are reconciled monthly, and unexplained charges are deducted from the next payroll."
+  },
+  {
+   "id": "L15",
+   "uuid": "2f60209e-9c31-5aef-8f6c-8780d43e66ef",
+   "parent": "S6",
+   "doc": "expense_faq.md",
+   "section": "Expenses FAQ > Corporate cards",
+   "text": "Lost cards must be reported to the card provider at once and to the finance team within 24 hours."
+  },
+  {
+   "id": "L16",
+   "uuid": "c3d71f4f-4dee-51a8-85db-4dcad574130c",
+   "parent": "S7",
+   "doc": "invoices.md",
+   "section": "Invoices > September 2026",
+   "text": "Invoice INV-2026-0931 was issued to Contoso Ltd. on 12 September 2026. The total due is 15,000 USD, payable within 30 days."
+  },
+  {
+   "id": "L17",
+   "uuid": "d0b4a2fa-8461-5d3d-a796-fea2c256bb2a",
+   "parent": "S7",
+   "doc": "invoices.md",
+   "section": "Invoices > September 2026",
+   "text": "Invoice INV-2026-0877 was issued to Fabrikam Inc. on 2 September 2026. The total due is 8,200 USD, payable within 45 days."
+  },
+  {
+   "id": "L18",
+   "uuid": "b23665d8-811d-5820-b7e1-5ac6f03d1ad5",
+   "parent": "S7",
+   "doc": "invoices.md",
+   "section": "Invoices > September 2026",
+   "text": "Invoice INV-2026-0912 was issued to Adventure Works on 9 September 2026. The total due is 23,750 USD, payable within 30 days."
+  },
+  {
+   "id": "L19",
+   "uuid": "b2ce3e8c-e837-5981-a839-8b168591639d",
+   "parent": "S7",
+   "doc": "invoices.md",
+   "section": "Invoices > September 2026",
+   "text": "Invoice INV-2026-0954 was issued to Northwind Traders on 18 September 2026. The total due is 4,900 USD, payable within 60 days."
+  },
+  {
+   "id": "L20",
+   "uuid": "0c16ac80-66bc-5c41-bfea-263571317d17",
+   "parent": "S7",
+   "doc": "invoices.md",
+   "section": "Invoices > September 2026",
+   "text": "Invoice INV-2026-0968 was issued to Tailspin Toys on 22 September 2026. The total due is 11,300 USD, payable within 30 days."
+  },
+  {
+   "id": "L21",
+   "uuid": "f2856e14-38ce-5813-b35b-5742e53bdb86",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Welcome to the Lisbon office. The building is open from 08:00 to 19:00 on weekdays, and the kitchen on the second floor is shared by every team. Please leave it as you would like to find it."
+  },
+  {
+   "id": "L22",
+   "uuid": "39238503-45e4-5431-b41f-ad5d5d83ac38",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Every employee receives an access badge on the first day. The badge opens the front door, the parking garage and the meeting rooms, and it also works at the printers, where it releases your documents."
+  },
+  {
+   "id": "L23",
+   "uuid": "acd1ab09-3bc0-5c51-98cd-57ba16850311",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "It must be handed back to reception on the last working day, and it stops working at midnight. A lost one is replaced for a fee of 15 EUR, which is waived for the first loss in a calendar year."
+  },
+  {
+   "id": "L24",
+   "uuid": "37c9e676-0872-51ca-ab29-884c029e4c1d",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Visitors must register at reception and wear a visitor sticker at all times. Hosts are responsible for collecting their guests and for making sure they leave before 19:00."
+  },
+  {
+   "id": "L25",
+   "uuid": "4ef9b640-2907-5f64-a0a1-9de77e04c415",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Bicycles may be parked in the garage on level minus one. The racks are first come, first served, and unclaimed bicycles are removed after thirty days with a note on the handlebars."
+  },
+  {
+   "id": "L26",
+   "uuid": "bdb8399e-ff0e-5b47-8d1e-ad7d0b12e47c",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Meeting rooms are booked in the calendar and released automatically if nobody checks in within ten minutes. The large room on the third floor is reserved for the all-hands every second Thursday."
+  },
+  {
+   "id": "L27",
+   "uuid": "b965736b-8a5a-59c0-88d6-f338233c617b",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Printers are shared. Colour printing is disabled by default and can be enabled per document, which is logged. Confidential documents should be collected immediately and never left in the tray."
+  },
+  {
+   "id": "L28",
+   "uuid": "b7a2e36f-7778-500a-8fa8-3f4990736272",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Lunch is not provided, but the second-floor kitchen has a fridge, two microwaves and a coffee machine that is cleaned every Friday afternoon by the facilities team, who also water the plants."
+  },
+  {
+   "id": "L29",
+   "uuid": "ba58215c-4388-582a-bafd-815364f7d285",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "The office is cleaned in the evenings. Please clear your desk of food and open drinks before you leave, and lock away anything valuable, because cleaners have access to every floor after 19:00."
+  },
+  {
+   "id": "L30",
+   "uuid": "b29fa27e-17a8-5dbe-9984-ca2b477cec29",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Fire exits are marked on every floor and tested on the first Monday of each quarter. When the alarm sounds, leave by the nearest stairs, never by the lift, and gather at the square opposite the main entrance."
+  },
+  {
+   "id": "L31",
+   "uuid": "d5bc2cc2-f428-51ce-800f-39b0a5778d2e",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Questions about the building go to the facilities team on the first floor, and questions about equipment go to IT. Both teams answer messages within one working day and are available in person on weekdays."
+  },
+  {
+   "id": "L32",
+   "uuid": "c00d5875-67ed-5429-85cf-2ce142011a9a",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Post and parcels are delivered to the front desk between 09:00 and 17:00. Personal parcels are accepted for up to five working days, after which they are returned to the sender, so please collect them promptly."
+  },
+  {
+   "id": "L33",
+   "uuid": "59d9cd50-8405-5488-9c82-3791a5325394",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Laptops are issued by IT on the first day and remain the property of the company. Report a damaged or stolen laptop to IT within 24 hours, and never install software that has not been approved in the software catalogue."
+  },
+  {
+   "id": "L34",
+   "uuid": "331b6af6-eb0e-50b2-92e7-d46ce468b187",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Remote work is possible up to three days a week by agreement with your manager. On days in the office, desks are shared and booked in the calendar, and personal items must be taken home in the evening."
+  },
+  {
+   "id": "L35",
+   "uuid": "f9f0c81a-a89e-5dab-b8c3-8bba40870758",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "The quiet room on the fourth floor is for focused work and phone calls are not allowed there. The phone booths on the second floor can be used without booking, for a maximum of thirty minutes at a time."
+  },
+  {
+   "id": "L36",
+   "uuid": "2ce13ca9-9dc8-53e5-91d6-c5142c77e1af",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Plants, pictures and small personal items are welcome at shared desks, but nothing may be fixed to walls or glass. Facilities will remove anything that blocks a fire exit, a sprinkler or a camera."
+  },
+  {
+   "id": "L37",
+   "uuid": "479e4637-4c51-57ac-880b-8f8c6b9454cb",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "The company holds a garden party each June and a winter dinner each December. Invitations are sent by email four weeks ahead, and employees may bring one guest to each event."
+  },
+  {
+   "id": "L38",
+   "uuid": "f27c4969-3b4a-5a1e-83d7-2ed4f41d836d",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Feedback about the office is always welcome. Use the suggestion box in the kitchen or write to the facilities team, who review every suggestion at their monthly meeting and publish the outcome on the intranet."
+  },
+  {
+   "id": "L39",
+   "uuid": "d10f7730-aa74-5e00-a759-9f1dcc1ca3ea",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Charging points for electric cars are available on level minus two and are shared by everyone. A car may stay connected for at most four hours, after which it must be moved so that the next colleague can charge."
+  },
+  {
+   "id": "L40",
+   "uuid": "bdf7ea25-2c95-5728-bf27-997a4d8d78ef",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "First aid kits are kept in the kitchen and at reception, and trained first aiders are listed on the intranet. Any accident, however small, should be reported to facilities the same day so that it can be recorded."
+  },
+  {
+   "id": "L41",
+   "uuid": "6956262a-100f-583e-bb79-cc9563947377",
+   "parent": "S8",
+   "doc": "handbook.md",
+   "section": "(no heading)",
+   "text": "Smoking is not permitted anywhere in the building or within five metres of the entrance. A designated area is available in the courtyard behind the garage."
+  }
+ ],
+ "queries": [
+  {
+   "id": "alcohol",
+   "candidates": [
+    {
+     "uuid": "81ba606d-be61-5ca3-b723-8782fa16ddf6",
+     "id": "L03",
+     "rrf": 0.03252247488101534,
+     "dense_rank": 1,
+     "sparse_rank": 2,
+     "rerank": 0.5640984773635864
+    },
+    {
+     "uuid": "f18e5b40-48a9-5407-a38b-200e7d43cf61",
+     "id": "S2",
+     "rrf": 0.031754032258064516,
+     "dense_rank": 2,
+     "sparse_rank": 4,
+     "rerank": 0.49359166622161865
+    },
+    {
+     "uuid": "b0002fa0-f96d-5e28-b07f-3ab6b6facf3b",
+     "id": "L11",
+     "rrf": 0.03125763125763126,
+     "dense_rank": 3,
+     "sparse_rank": 5,
+     "rerank": 0.00044421834172680974
+    },
+    {
+     "uuid": "269db150-a890-5969-90c0-6cc099d490fb",
+     "id": "S1",
+     "rrf": 0.031024531024531024,
+     "dense_rank": 6,
+     "sparse_rank": 3,
+     "rerank": 3.321419353596866e-05
+    },
+    {
+     "uuid": "aa20d7dc-64f9-5743-8fba-2d693ee3309a",
+     "id": "S5",
+     "rrf": 0.030776515151515152,
+     "dense_rank": 4,
+     "sparse_rank": 6,
+     "rerank": 0.0004173157794866711
+    },
+    {
+     "uuid": "6c564633-bea8-549c-81d3-04dfdcca2bae",
+     "id": "L02",
+     "rrf": 0.03028233151183971,
+     "dense_rank": 12,
+     "sparse_rank": 1,
+     "rerank": 0.00013982209202367812
+    },
+    {
+     "uuid": "913d4ae3-5c93-56f5-98c0-59e98e271d64",
+     "id": "L05",
+     "rrf": 0.029418126757516764,
+     "dense_rank": 9,
+     "sparse_rank": 7,
+     "rerank": 0.002800926798954606
+    },
+    {
+     "uuid": "8bf5e592-2748-5de1-9773-8c8bf2d61979",
+     "id": "S3",
+     "rrf": 0.029211087420042643,
+     "dense_rank": 7,
+     "sparse_rank": 10,
+     "rerank": 0.004609572235494852
+    },
+    {
+     "uuid": "d97f21c2-e777-5fab-b512-874eebadb963",
+     "id": "S7",
+     "rrf": 0.02606951871657754,
+     "dense_rank": 28,
+     "sparse_rank": 8,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "0f1d7d06-7707-58e4-8ce2-96663c7cdb46",
+     "id": "S8",
+     "rrf": 0.025978407557354925,
+     "dense_rank": 16,
+     "sparse_rank": 18,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "acd1ab09-3bc0-5c51-98cd-57ba16850311",
+     "id": "L23",
+     "rrf": 0.025974025974025976,
+     "dense_rank": 17,
+     "sparse_rank": 17,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "b986d009-c777-57c4-bd21-d78d1b1e5471",
+     "id": "L10",
+     "rrf": 0.025478740668614087,
+     "dense_rank": 18,
+     "sparse_rank": 19,
+     "rerank": 2.0145689632045105e-05
+    },
+    {
+     "uuid": "b23665d8-811d-5820-b7e1-5ac6f03d1ad5",
+     "id": "L18",
+     "rrf": 0.02474946856969329,
+     "dense_rank": 29,
+     "sparse_rank": 14,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "a514d6d6-8743-5404-8249-7943391ba0d0",
+     "id": "L08",
+     "rrf": 0.024722804914593947,
+     "dense_rank": 11,
+     "sparse_rank": 34,
+     "rerank": 7.031184213701636e-05
+    },
+    {
+     "uuid": "1e5f6b2a-2f01-5bf4-a796-3bc86bdd20aa",
+     "id": "S4",
+     "rrf": 0.02459499263622975,
+     "dense_rank": 10,
+     "sparse_rank": 37,
+     "rerank": 0.00011591933434829116
+    },
+    {
+     "uuid": "d0b4a2fa-8461-5d3d-a796-fea2c256bb2a",
+     "id": "L17",
+     "rrf": 0.024115296803652965,
+     "dense_rank": 36,
+     "sparse_rank": 13,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f7aad287-0232-5982-947b-4e791034b1c3",
+     "id": "L01",
+     "rrf": 0.023859649122807018,
+     "dense_rank": 15,
+     "sparse_rank": 35,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "4ef9b640-2907-5f64-a0a1-9de77e04c415",
+     "id": "L25",
+     "rrf": 0.02381289865343728,
+     "dense_rank": 25,
+     "sparse_rank": 23,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "331b6af6-eb0e-50b2-92e7-d46ce468b187",
+     "id": "L34",
+     "rrf": 0.02368937482478273,
+     "dense_rank": 27,
+     "sparse_rank": 22,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "0c16ac80-66bc-5c41-bfea-263571317d17",
+     "id": "L20",
+     "rrf": 0.023467173087357567,
+     "dense_rank": 37,
+     "sparse_rank": 16,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "bdb8399e-ff0e-5b47-8d1e-ad7d0b12e47c",
+     "id": "L26",
+     "rrf": 0.023369565217391305,
+     "dense_rank": 32,
+     "sparse_rank": 20,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f6ce7fa7-b821-5033-adaa-580a1aa99564",
+     "id": "L13",
+     "rrf": 0.022657450076804916,
+     "dense_rank": 24,
+     "sparse_rank": 33,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "ba58215c-4388-582a-bafd-815364f7d285",
+     "id": "L29",
+     "rrf": 0.02204457364341085,
+     "dense_rank": 26,
+     "sparse_rank": 36,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "39238503-45e4-5431-b41f-ad5d5d83ac38",
+     "id": "L22",
+     "rrf": 0.02188995215311005,
+     "dense_rank": 35,
+     "sparse_rank": 28,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "59d9cd50-8405-5488-9c82-3791a5325394",
+     "id": "L33",
+     "rrf": 0.021858576206402296,
+     "dense_rank": 31,
+     "sparse_rank": 32,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "d10f7730-aa74-5e00-a759-9f1dcc1ca3ea",
+     "id": "L39",
+     "rrf": 0.021741699161054,
+     "dense_rank": 33,
+     "sparse_rank": 31,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "6956262a-100f-583e-bb79-cc9563947377",
+     "id": "L41",
+     "rrf": 0.02172891707775429,
+     "dense_rank": 39,
+     "sparse_rank": 26,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b965736b-8a5a-59c0-88d6-f338233c617b",
+     "id": "L27",
+     "rrf": 0.02149425287356322,
+     "dense_rank": 40,
+     "sparse_rank": 27,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "8ec1ca5c-2107-51a5-a3ca-6e8a4d5f0d58",
+     "id": "L14",
+     "rrf": 0.015384615384615385,
+     "dense_rank": 5,
+     "sparse_rank": null,
+     "rerank": 0.00033535013790242374
+    },
+    {
+     "uuid": "1632b67c-62f1-59a8-b7bc-580af89189b4",
+     "id": "S6",
+     "rrf": 0.014705882352941176,
+     "dense_rank": 8,
+     "sparse_rank": null,
+     "rerank": 0.00026119034737348557
+    },
+    {
+     "uuid": "f2856e14-38ce-5813-b35b-5742e53bdb86",
+     "id": "L21",
+     "rrf": 0.014492753623188406,
+     "dense_rank": null,
+     "sparse_rank": 9,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f9f0c81a-a89e-5dab-b8c3-8bba40870758",
+     "id": "L35",
+     "rrf": 0.014084507042253521,
+     "dense_rank": null,
+     "sparse_rank": 11,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "c3d71f4f-4dee-51a8-85db-4dcad574130c",
+     "id": "L16",
+     "rrf": 0.013888888888888888,
+     "dense_rank": null,
+     "sparse_rank": 12,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "7bd228b4-95a4-53f9-9b50-0dd5f3a795db",
+     "id": "L04",
+     "rrf": 0.0136986301369863,
+     "dense_rank": 13,
+     "sparse_rank": null,
+     "rerank": 3.53562536474783e-05
+    },
+    {
+     "uuid": "265b1808-242b-54a2-bc26-9ad2cab03dce",
+     "id": "L06",
+     "rrf": 0.013513513513513514,
+     "dense_rank": 14,
+     "sparse_rank": null,
+     "rerank": 0.0009110511746257544
+    },
+    {
+     "uuid": "b2ce3e8c-e837-5981-a839-8b168591639d",
+     "id": "L19",
+     "rrf": 0.013333333333333334,
+     "dense_rank": null,
+     "sparse_rank": 15,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "37a4454a-727f-593f-be10-cad6eeddb3a6",
+     "id": "L09",
+     "rrf": 0.012658227848101266,
+     "dense_rank": 19,
+     "sparse_rank": null,
+     "rerank": 3.7636447814293206e-05
+    },
+    {
+     "uuid": "37c9e676-0872-51ca-ab29-884c029e4c1d",
+     "id": "L24",
+     "rrf": 0.0125,
+     "dense_rank": 20,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "479e4637-4c51-57ac-880b-8f8c6b9454cb",
+     "id": "L37",
+     "rrf": 0.012345679012345678,
+     "dense_rank": 21,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f27c4969-3b4a-5a1e-83d7-2ed4f41d836d",
+     "id": "L38",
+     "rrf": 0.012345679012345678,
+     "dense_rank": null,
+     "sparse_rank": 21,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "2f60209e-9c31-5aef-8f6c-8780d43e66ef",
+     "id": "L15",
+     "rrf": 0.012195121951219513,
+     "dense_rank": 22,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "ac83054b-f0a5-5c49-afd9-6f396aeece9d",
+     "id": "L07",
+     "rrf": 0.012048192771084338,
+     "dense_rank": 23,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "d5bc2cc2-f428-51ce-800f-39b0a5778d2e",
+     "id": "L31",
+     "rrf": 0.011904761904761904,
+     "dense_rank": null,
+     "sparse_rank": 24,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b29fa27e-17a8-5dbe-9984-ca2b477cec29",
+     "id": "L30",
+     "rrf": 0.011764705882352941,
+     "dense_rank": null,
+     "sparse_rank": 25,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b7a2e36f-7778-500a-8fa8-3f4990736272",
+     "id": "L28",
+     "rrf": 0.011235955056179775,
+     "dense_rank": null,
+     "sparse_rank": 29,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "33f23cf4-be7f-5453-ab60-97bdbdbb481a",
+     "id": "L12",
+     "rrf": 0.011111111111111112,
+     "dense_rank": 30,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "bdf7ea25-2c95-5728-bf27-997a4d8d78ef",
+     "id": "L40",
+     "rrf": 0.011111111111111112,
+     "dense_rank": null,
+     "sparse_rank": 30,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "c00d5875-67ed-5429-85cf-2ce142011a9a",
+     "id": "L32",
+     "rrf": 0.010638297872340425,
+     "dense_rank": 34,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "2ce13ca9-9dc8-53e5-91d6-c5142c77e1af",
+     "id": "L36",
+     "rrf": 0.01020408163265306,
+     "dense_rank": 38,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    }
+   ],
+   "spine": {
+    "parent_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 16
+     },
+     "chunks": [
+      {
+       "id": "L03",
+       "chars": 356,
+       "expanded": true,
+       "merged": [
+        "S2",
+        "L04"
+       ]
+      },
+      {
+       "id": "S3",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L05",
+        "L06",
+        "L07"
+       ]
+      },
+      {
+       "id": "L11",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "S5",
+        "L10"
+       ]
+      },
+      {
+       "id": "L14",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "S6"
+       ]
+      },
+      {
+       "id": "L02",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "S1",
+        "L01"
+       ]
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L08",
+        "L09"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S7",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "L18",
+        "L17",
+        "L16",
+        "L19"
+       ]
+      }
+     ]
+    },
+    "leaf_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "leaf_only": 8
+      }
+     },
+     "chunks": [
+      {
+       "id": "L03",
+       "chars": 167,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L05",
+       "chars": 151,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L06",
+       "chars": 177,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L11",
+       "chars": 118,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L14",
+       "chars": 178,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L02",
+       "chars": 176,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L08",
+       "chars": 182,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L09",
+       "chars": 152,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "parent_down": {
+     "degraded": true,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 9
+     },
+     "chunks": [
+      {
+       "id": "L03",
+       "chars": 356,
+       "expanded": true,
+       "merged": [
+        "S2"
+       ]
+      },
+      {
+       "id": "L11",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "S5",
+        "L10"
+       ]
+      },
+      {
+       "id": "S1",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "L02",
+        "L01"
+       ]
+      },
+      {
+       "id": "L05",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "S3"
+       ]
+      },
+      {
+       "id": "S7",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "L18",
+        "L17"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L08",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "S4"
+       ]
+      },
+      {
+       "id": "L25",
+       "chars": 180,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "sections_off": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "section_hits_off": 8
+      },
+      "repeats_merged": 9
+     },
+     "chunks": [
+      {
+       "id": "L03",
+       "chars": 356,
+       "expanded": true,
+       "merged": [
+        "L04"
+       ]
+      },
+      {
+       "id": "L05",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L06",
+        "L07"
+       ]
+      },
+      {
+       "id": "L11",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "L10"
+       ]
+      },
+      {
+       "id": "L14",
+       "chars": 276,
+       "expanded": true,
+       "merged": []
+      },
+      {
+       "id": "L02",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "L01"
+       ]
+      },
+      {
+       "id": "L08",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L09"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L18",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "L17",
+        "L16",
+        "L19"
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "late-claim",
+   "candidates": [
+    {
+     "uuid": "aa20d7dc-64f9-5743-8fba-2d693ee3309a",
+     "id": "S5",
+     "rrf": 0.031054405392392875,
+     "dense_rank": 7,
+     "sparse_rank": 2,
+     "rerank": 0.0017007224960252643
+    },
+    {
+     "uuid": "8bf5e592-2748-5de1-9773-8c8bf2d61979",
+     "id": "S3",
+     "rrf": 0.030886196246139225,
+     "dense_rank": 1,
+     "sparse_rank": 9,
+     "rerank": 0.332852303981781
+    },
+    {
+     "uuid": "1e5f6b2a-2f01-5bf4-a796-3bc86bdd20aa",
+     "id": "S4",
+     "rrf": 0.03057889822595705,
+     "dense_rank": 3,
+     "sparse_rank": 8,
+     "rerank": 0.00026119034737348557
+    },
+    {
+     "uuid": "0f1d7d06-7707-58e4-8ce2-96663c7cdb46",
+     "id": "S8",
+     "rrf": 0.02967032967032967,
+     "dense_rank": 5,
+     "sparse_rank": 10,
+     "rerank": 0.00026119034737348557
+    },
+    {
+     "uuid": "a514d6d6-8743-5404-8249-7943391ba0d0",
+     "id": "L08",
+     "rrf": 0.029437229437229435,
+     "dense_rank": 10,
+     "sparse_rank": 6,
+     "rerank": 4.832564081880264e-05
+    },
+    {
+     "uuid": "913d4ae3-5c93-56f5-98c0-59e98e271d64",
+     "id": "L05",
+     "rrf": 0.0288981288981289,
+     "dense_rank": 14,
+     "sparse_rank": 5,
+     "rerank": 0.0004044815432280302
+    },
+    {
+     "uuid": "b986d009-c777-57c4-bd21-d78d1b1e5471",
+     "id": "L10",
+     "rrf": 0.028782894736842105,
+     "dense_rank": 16,
+     "sparse_rank": 4,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f6ce7fa7-b821-5033-adaa-580a1aa99564",
+     "id": "L13",
+     "rrf": 0.02788769549651404,
+     "dense_rank": 27,
+     "sparse_rank": 1,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "bdb8399e-ff0e-5b47-8d1e-ad7d0b12e47c",
+     "id": "L26",
+     "rrf": 0.026830135039090264,
+     "dense_rank": 24,
+     "sparse_rank": 7,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "33f23cf4-be7f-5453-ab60-97bdbdbb481a",
+     "id": "L12",
+     "rrf": 0.0265113137453563,
+     "dense_rank": 34,
+     "sparse_rank": 3,
+     "rerank": 0.00021654405281879008
+    },
+    {
+     "uuid": "265b1808-242b-54a2-bc26-9ad2cab03dce",
+     "id": "L06",
+     "rrf": 0.016129032258064516,
+     "dense_rank": 2,
+     "sparse_rank": null,
+     "rerank": 0.01640303246676922
+    },
+    {
+     "uuid": "acd1ab09-3bc0-5c51-98cd-57ba16850311",
+     "id": "L23",
+     "rrf": 0.015625,
+     "dense_rank": 4,
+     "sparse_rank": null,
+     "rerank": 0.00015843621804378927
+    },
+    {
+     "uuid": "1632b67c-62f1-59a8-b7bc-580af89189b4",
+     "id": "S6",
+     "rrf": 0.015151515151515152,
+     "dense_rank": 6,
+     "sparse_rank": null,
+     "rerank": 9.610241249902174e-05
+    },
+    {
+     "uuid": "269db150-a890-5969-90c0-6cc099d490fb",
+     "id": "S1",
+     "rrf": 0.014705882352941176,
+     "dense_rank": 8,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "ac83054b-f0a5-5c49-afd9-6f396aeece9d",
+     "id": "L07",
+     "rrf": 0.014492753623188406,
+     "dense_rank": 9,
+     "sparse_rank": null,
+     "rerank": 0.000458312890259549
+    },
+    {
+     "uuid": "37a4454a-727f-593f-be10-cad6eeddb3a6",
+     "id": "L09",
+     "rrf": 0.014084507042253521,
+     "dense_rank": 11,
+     "sparse_rank": null,
+     "rerank": 0.00023050670279189944
+    },
+    {
+     "uuid": "2f60209e-9c31-5aef-8f6c-8780d43e66ef",
+     "id": "L15",
+     "rrf": 0.013888888888888888,
+     "dense_rank": 12,
+     "sparse_rank": null,
+     "rerank": 7.031184213701636e-05
+    },
+    {
+     "uuid": "f7aad287-0232-5982-947b-4e791034b1c3",
+     "id": "L01",
+     "rrf": 0.0136986301369863,
+     "dense_rank": 13,
+     "sparse_rank": null,
+     "rerank": 1.8925147742265835e-05
+    },
+    {
+     "uuid": "f18e5b40-48a9-5407-a38b-200e7d43cf61",
+     "id": "S2",
+     "rrf": 0.013333333333333334,
+     "dense_rank": 15,
+     "sparse_rank": null,
+     "rerank": 0.0004044815432280302
+    },
+    {
+     "uuid": "8ec1ca5c-2107-51a5-a3ca-6e8a4d5f0d58",
+     "id": "L14",
+     "rrf": 0.012987012987012988,
+     "dense_rank": 17,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "d97f21c2-e777-5fab-b512-874eebadb963",
+     "id": "S7",
+     "rrf": 0.01282051282051282,
+     "dense_rank": 18,
+     "sparse_rank": null,
+     "rerank": 2.0145689632045105e-05
+    },
+    {
+     "uuid": "81ba606d-be61-5ca3-b723-8782fa16ddf6",
+     "id": "L03",
+     "rrf": 0.012658227848101266,
+     "dense_rank": 19,
+     "sparse_rank": null,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "37c9e676-0872-51ca-ab29-884c029e4c1d",
+     "id": "L24",
+     "rrf": 0.0125,
+     "dense_rank": 20,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "c00d5875-67ed-5429-85cf-2ce142011a9a",
+     "id": "L32",
+     "rrf": 0.012345679012345678,
+     "dense_rank": 21,
+     "sparse_rank": null,
+     "rerank": 6.605214002775028e-05
+    },
+    {
+     "uuid": "6c564633-bea8-549c-81d3-04dfdcca2bae",
+     "id": "L02",
+     "rrf": 0.012195121951219513,
+     "dense_rank": 22,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "ba58215c-4388-582a-bafd-815364f7d285",
+     "id": "L29",
+     "rrf": 0.012048192771084338,
+     "dense_rank": 23,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "7bd228b4-95a4-53f9-9b50-0dd5f3a795db",
+     "id": "L04",
+     "rrf": 0.011764705882352941,
+     "dense_rank": 25,
+     "sparse_rank": null,
+     "rerank": 2.0145689632045105e-05
+    },
+    {
+     "uuid": "59d9cd50-8405-5488-9c82-3791a5325394",
+     "id": "L33",
+     "rrf": 0.011627906976744186,
+     "dense_rank": 26,
+     "sparse_rank": null,
+     "rerank": 2.93115390377352e-05
+    },
+    {
+     "uuid": "b23665d8-811d-5820-b7e1-5ac6f03d1ad5",
+     "id": "L18",
+     "rrf": 0.011363636363636364,
+     "dense_rank": 28,
+     "sparse_rank": null,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "c3d71f4f-4dee-51a8-85db-4dcad574130c",
+     "id": "L16",
+     "rrf": 0.011235955056179775,
+     "dense_rank": 29,
+     "sparse_rank": null,
+     "rerank": 1.8925147742265835e-05
+    },
+    {
+     "uuid": "bdf7ea25-2c95-5728-bf27-997a4d8d78ef",
+     "id": "L40",
+     "rrf": 0.011111111111111112,
+     "dense_rank": 30,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b2ce3e8c-e837-5981-a839-8b168591639d",
+     "id": "L19",
+     "rrf": 0.01098901098901099,
+     "dense_rank": 31,
+     "sparse_rank": null,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "331b6af6-eb0e-50b2-92e7-d46ce468b187",
+     "id": "L34",
+     "rrf": 0.010869565217391304,
+     "dense_rank": 32,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "d0b4a2fa-8461-5d3d-a796-fea2c256bb2a",
+     "id": "L17",
+     "rrf": 0.010752688172043012,
+     "dense_rank": 33,
+     "sparse_rank": null,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "b965736b-8a5a-59c0-88d6-f338233c617b",
+     "id": "L27",
+     "rrf": 0.010526315789473684,
+     "dense_rank": 35,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "b29fa27e-17a8-5dbe-9984-ca2b477cec29",
+     "id": "L30",
+     "rrf": 0.010416666666666666,
+     "dense_rank": 36,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "4ef9b640-2907-5f64-a0a1-9de77e04c415",
+     "id": "L25",
+     "rrf": 0.010309278350515464,
+     "dense_rank": 37,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f2856e14-38ce-5813-b35b-5742e53bdb86",
+     "id": "L21",
+     "rrf": 0.01020408163265306,
+     "dense_rank": 38,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "479e4637-4c51-57ac-880b-8f8c6b9454cb",
+     "id": "L37",
+     "rrf": 0.010101010101010102,
+     "dense_rank": 39,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "0c16ac80-66bc-5c41-bfea-263571317d17",
+     "id": "L20",
+     "rrf": 0.01,
+     "dense_rank": 40,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    }
+   ],
+   "spine": {
+    "parent_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 8
+     },
+     "chunks": [
+      {
+       "id": "S3",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L06",
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "S5",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "L12"
+       ]
+      },
+      {
+       "id": "S2",
+       "chars": 356,
+       "expanded": true,
+       "merged": [
+        "L03"
+       ]
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L09",
+        "L08"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S6",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L15"
+       ]
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "leaf_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "leaf_only": 8
+      }
+     },
+     "chunks": [
+      {
+       "id": "L06",
+       "chars": 177,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L07",
+       "chars": 143,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L05",
+       "chars": 151,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L09",
+       "chars": 152,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L12",
+       "chars": 147,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L15",
+       "chars": 97,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "parent_down": {
+     "degraded": true,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 11
+     },
+     "chunks": [
+      {
+       "id": "S5",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "L10",
+        "L13",
+        "L12"
+       ]
+      },
+      {
+       "id": "S3",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L05",
+        "L06",
+        "L07"
+       ]
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L08",
+        "L09"
+       ]
+      },
+      {
+       "id": "L26",
+       "chars": 194,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S6",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L15",
+        "L14"
+       ]
+      },
+      {
+       "id": "S1",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "L01"
+       ]
+      },
+      {
+       "id": "S2",
+       "chars": 356,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "sections_off": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "section_hits_off": 8
+      },
+      "repeats_merged": 4
+     },
+     "chunks": [
+      {
+       "id": "L06",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "L09",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L08"
+       ]
+      },
+      {
+       "id": "L12",
+       "chars": 548,
+       "expanded": true,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L15",
+       "chars": 276,
+       "expanded": true,
+       "merged": []
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L03",
+       "chars": 356,
+       "expanded": true,
+       "merged": [
+        "L04"
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "paid-back",
+   "candidates": [
+    {
+     "uuid": "8bf5e592-2748-5de1-9773-8c8bf2d61979",
+     "id": "S3",
+     "rrf": 0.031754032258064516,
+     "dense_rank": 2,
+     "sparse_rank": 4,
+     "rerank": 0.5751108527183533
+    },
+    {
+     "uuid": "aa20d7dc-64f9-5743-8fba-2d693ee3309a",
+     "id": "S5",
+     "rrf": 0.0315136476426799,
+     "dense_rank": 5,
+     "sparse_rank": 2,
+     "rerank": 0.00026119034737348557
+    },
+    {
+     "uuid": "265b1808-242b-54a2-bc26-9ad2cab03dce",
+     "id": "L06",
+     "rrf": 0.030679156908665108,
+     "dense_rank": 1,
+     "sparse_rank": 10,
+     "rerank": 0.5940803289413452
+    },
+    {
+     "uuid": "ac83054b-f0a5-5c49-afd9-6f396aeece9d",
+     "id": "L07",
+     "rrf": 0.030330882352941176,
+     "dense_rank": 4,
+     "sparse_rank": 8,
+     "rerank": 0.012821215204894543
+    },
+    {
+     "uuid": "acd1ab09-3bc0-5c51-98cd-57ba16850311",
+     "id": "L23",
+     "rrf": 0.02967032967032967,
+     "dense_rank": 10,
+     "sparse_rank": 5,
+     "rerank": 0.00023050670279189944
+    },
+    {
+     "uuid": "1e5f6b2a-2f01-5bf4-a796-3bc86bdd20aa",
+     "id": "S4",
+     "rrf": 0.028985507246376812,
+     "dense_rank": 9,
+     "sparse_rank": 9,
+     "rerank": 0.008315778337419033
+    },
+    {
+     "uuid": "269db150-a890-5969-90c0-6cc099d490fb",
+     "id": "S1",
+     "rrf": 0.02886002886002886,
+     "dense_rank": 3,
+     "sparse_rank": 17,
+     "rerank": 0.0017546144081279635
+    },
+    {
+     "uuid": "f6ce7fa7-b821-5033-adaa-580a1aa99564",
+     "id": "L13",
+     "rrf": 0.02788769549651404,
+     "dense_rank": 27,
+     "sparse_rank": 1,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "913d4ae3-5c93-56f5-98c0-59e98e271d64",
+     "id": "L05",
+     "rrf": 0.027637721755368813,
+     "dense_rank": 25,
+     "sparse_rank": 3,
+     "rerank": 0.0006070756353437901
+    },
+    {
+     "uuid": "a514d6d6-8743-5404-8249-7943391ba0d0",
+     "id": "L08",
+     "rrf": 0.02758751902587519,
+     "dense_rank": 13,
+     "sparse_rank": 12,
+     "rerank": 0.0017546144081279635
+    },
+    {
+     "uuid": "f7aad287-0232-5982-947b-4e791034b1c3",
+     "id": "L01",
+     "rrf": 0.027425373134328357,
+     "dense_rank": 7,
+     "sparse_rank": 20,
+     "rerank": 0.0007793660624884069
+    },
+    {
+     "uuid": "b986d009-c777-57c4-bd21-d78d1b1e5471",
+     "id": "L10",
+     "rrf": 0.02712049508554787,
+     "dense_rank": 22,
+     "sparse_rank": 7,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "0f1d7d06-7707-58e4-8ce2-96663c7cdb46",
+     "id": "S8",
+     "rrf": 0.027046783625730993,
+     "dense_rank": 12,
+     "sparse_rank": 16,
+     "rerank": 2.2827996872365475e-05
+    },
+    {
+     "uuid": "37a4454a-727f-593f-be10-cad6eeddb3a6",
+     "id": "L09",
+     "rrf": 0.026742734890354787,
+     "dense_rank": 19,
+     "sparse_rank": 11,
+     "rerank": 0.002889581024646759
+    },
+    {
+     "uuid": "33f23cf4-be7f-5453-ab60-97bdbdbb481a",
+     "id": "L12",
+     "rrf": 0.026021080368906456,
+     "dense_rank": 32,
+     "sparse_rank": 6,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "6c564633-bea8-549c-81d3-04dfdcca2bae",
+     "id": "L02",
+     "rrf": 0.025978407557354925,
+     "dense_rank": 16,
+     "sparse_rank": 18,
+     "rerank": 0.0024726232513785362
+    },
+    {
+     "uuid": "37c9e676-0872-51ca-ab29-884c029e4c1d",
+     "id": "L24",
+     "rrf": 0.025603392041748205,
+     "dense_rank": 24,
+     "sparse_rank": 13,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "c00d5875-67ed-5429-85cf-2ce142011a9a",
+     "id": "L32",
+     "rrf": 0.025332691999358666,
+     "dense_rank": 17,
+     "sparse_rank": 21,
+     "rerank": 0.0003150386910419911
+    },
+    {
+     "uuid": "d10f7730-aa74-5e00-a759-9f1dcc1ca3ea",
+     "id": "L39",
+     "rrf": 0.02456928838951311,
+     "dense_rank": 29,
+     "sparse_rank": 15,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "bdb8399e-ff0e-5b47-8d1e-ad7d0b12e47c",
+     "id": "L26",
+     "rrf": 0.02341091602014428,
+     "dense_rank": 33,
+     "sparse_rank": 19,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "f18e5b40-48a9-5407-a38b-200e7d43cf61",
+     "id": "S2",
+     "rrf": 0.015151515151515152,
+     "dense_rank": 6,
+     "sparse_rank": null,
+     "rerank": 0.0015011822106316686
+    },
+    {
+     "uuid": "1632b67c-62f1-59a8-b7bc-580af89189b4",
+     "id": "S6",
+     "rrf": 0.014705882352941176,
+     "dense_rank": 8,
+     "sparse_rank": null,
+     "rerank": 0.005060331430286169
+    },
+    {
+     "uuid": "81ba606d-be61-5ca3-b723-8782fa16ddf6",
+     "id": "L03",
+     "rrf": 0.014084507042253521,
+     "dense_rank": 11,
+     "sparse_rank": null,
+     "rerank": 0.00043055706191807985
+    },
+    {
+     "uuid": "7bd228b4-95a4-53f9-9b50-0dd5f3a795db",
+     "id": "L04",
+     "rrf": 0.013513513513513514,
+     "dense_rank": 14,
+     "sparse_rank": null,
+     "rerank": 5.1442217227304354e-05
+    },
+    {
+     "uuid": "f9f0c81a-a89e-5dab-b8c3-8bba40870758",
+     "id": "L35",
+     "rrf": 0.013513513513513514,
+     "dense_rank": null,
+     "sparse_rank": 14,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "8ec1ca5c-2107-51a5-a3ca-6e8a4d5f0d58",
+     "id": "L14",
+     "rrf": 0.013333333333333334,
+     "dense_rank": 15,
+     "sparse_rank": null,
+     "rerank": 0.002115703420713544
+    },
+    {
+     "uuid": "2f60209e-9c31-5aef-8f6c-8780d43e66ef",
+     "id": "L15",
+     "rrf": 0.01282051282051282,
+     "dense_rank": 18,
+     "sparse_rank": null,
+     "rerank": 0.0002453695051372051
+    },
+    {
+     "uuid": "d97f21c2-e777-5fab-b512-874eebadb963",
+     "id": "S7",
+     "rrf": 0.0125,
+     "dense_rank": 20,
+     "sparse_rank": null,
+     "rerank": 0.0008830457809381187
+    },
+    {
+     "uuid": "b23665d8-811d-5820-b7e1-5ac6f03d1ad5",
+     "id": "L18",
+     "rrf": 0.012345679012345678,
+     "dense_rank": 21,
+     "sparse_rank": null,
+     "rerank": 0.00407013762742281
+    },
+    {
+     "uuid": "b0002fa0-f96d-5e28-b07f-3ab6b6facf3b",
+     "id": "L11",
+     "rrf": 0.012048192771084338,
+     "dense_rank": 23,
+     "sparse_rank": null,
+     "rerank": 7.031184213701636e-05
+    },
+    {
+     "uuid": "331b6af6-eb0e-50b2-92e7-d46ce468b187",
+     "id": "L34",
+     "rrf": 0.011627906976744186,
+     "dense_rank": 26,
+     "sparse_rank": null,
+     "rerank": 2.1444948288262822e-05
+    },
+    {
+     "uuid": "0c16ac80-66bc-5c41-bfea-263571317d17",
+     "id": "L20",
+     "rrf": 0.011363636363636364,
+     "dense_rank": 28,
+     "sparse_rank": null,
+     "rerank": 0.0008559005800634623
+    },
+    {
+     "uuid": "b2ce3e8c-e837-5981-a839-8b168591639d",
+     "id": "L19",
+     "rrf": 0.011111111111111112,
+     "dense_rank": 30,
+     "sparse_rank": null,
+     "rerank": 0.0010005043586716056
+    },
+    {
+     "uuid": "4ef9b640-2907-5f64-a0a1-9de77e04c415",
+     "id": "L25",
+     "rrf": 0.01098901098901099,
+     "dense_rank": 31,
+     "sparse_rank": null,
+     "rerank": 2.2827996872365475e-05
+    },
+    {
+     "uuid": "d0b4a2fa-8461-5d3d-a796-fea2c256bb2a",
+     "id": "L17",
+     "rrf": 0.010638297872340425,
+     "dense_rank": 34,
+     "sparse_rank": null,
+     "rerank": 0.0006878511630930007
+    },
+    {
+     "uuid": "c3d71f4f-4dee-51a8-85db-4dcad574130c",
+     "id": "L16",
+     "rrf": 0.010526315789473684,
+     "dense_rank": 35,
+     "sparse_rank": null,
+     "rerank": 0.0008559005800634623
+    },
+    {
+     "uuid": "479e4637-4c51-57ac-880b-8f8c6b9454cb",
+     "id": "L37",
+     "rrf": 0.010416666666666666,
+     "dense_rank": 36,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "59d9cd50-8405-5488-9c82-3791a5325394",
+     "id": "L33",
+     "rrf": 0.010309278350515464,
+     "dense_rank": 37,
+     "sparse_rank": null,
+     "rerank": 4.832564081880264e-05
+    },
+    {
+     "uuid": "ba58215c-4388-582a-bafd-815364f7d285",
+     "id": "L29",
+     "rrf": 0.01020408163265306,
+     "dense_rank": 38,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f2856e14-38ce-5813-b35b-5742e53bdb86",
+     "id": "L21",
+     "rrf": 0.010101010101010102,
+     "dense_rank": 39,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "d5bc2cc2-f428-51ce-800f-39b0a5778d2e",
+     "id": "L31",
+     "rrf": 0.01,
+     "dense_rank": 40,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    }
+   ],
+   "spine": {
+    "parent_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 15
+     },
+     "chunks": [
+      {
+       "id": "L06",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "S3",
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L09",
+        "L08"
+       ]
+      },
+      {
+       "id": "S6",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L14",
+        "L15"
+       ]
+      },
+      {
+       "id": "L18",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "L19",
+        "S7",
+        "L20",
+        "L16",
+        "L17"
+       ]
+      },
+      {
+       "id": "L02",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "S1",
+        "L01"
+       ]
+      },
+      {
+       "id": "S2",
+       "chars": 356,
+       "expanded": true,
+       "merged": [
+        "L03"
+       ]
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S5",
+       "chars": 548,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "leaf_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "leaf_only": 8
+      }
+     },
+     "chunks": [
+      {
+       "id": "L06",
+       "chars": 177,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L07",
+       "chars": 143,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L18",
+       "chars": 125,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L09",
+       "chars": 152,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L02",
+       "chars": 176,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L14",
+       "chars": 178,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L08",
+       "chars": 182,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L19",
+       "chars": 127,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "parent_down": {
+     "degraded": true,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 10
+     },
+     "chunks": [
+      {
+       "id": "S3",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L06",
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "S5",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "L13",
+        "L10",
+        "L12"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L08",
+        "L09"
+       ]
+      },
+      {
+       "id": "S1",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "L01",
+        "L02"
+       ]
+      },
+      {
+       "id": "L24",
+       "chars": 171,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L39",
+       "chars": 211,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "sections_off": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "section_hits_off": 8
+      },
+      "repeats_merged": 9
+     },
+     "chunks": [
+      {
+       "id": "L06",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "L18",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "L19",
+        "L20",
+        "L16",
+        "L17"
+       ]
+      },
+      {
+       "id": "L09",
+       "chars": 335,
+       "expanded": true,
+       "merged": [
+        "L08"
+       ]
+      },
+      {
+       "id": "L02",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "L01"
+       ]
+      },
+      {
+       "id": "L14",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L15"
+       ]
+      },
+      {
+       "id": "L03",
+       "chars": 356,
+       "expanded": true,
+       "merged": []
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "invoice",
+   "candidates": [
+    {
+     "uuid": "d0b4a2fa-8461-5d3d-a796-fea2c256bb2a",
+     "id": "L17",
+     "rrf": 0.03252247488101534,
+     "dense_rank": 2,
+     "sparse_rank": 1,
+     "rerank": 0.9802808165550232
+    },
+    {
+     "uuid": "d97f21c2-e777-5fab-b512-874eebadb963",
+     "id": "S7",
+     "rrf": 0.03252247488101534,
+     "dense_rank": 1,
+     "sparse_rank": 2,
+     "rerank": 0.9755768775939941
+    },
+    {
+     "uuid": "c3d71f4f-4dee-51a8-85db-4dcad574130c",
+     "id": "L16",
+     "rrf": 0.031746031746031744,
+     "dense_rank": 3,
+     "sparse_rank": 3,
+     "rerank": 0.10230471193790436
+    },
+    {
+     "uuid": "b2ce3e8c-e837-5981-a839-8b168591639d",
+     "id": "L19",
+     "rrf": 0.031009615384615385,
+     "dense_rank": 4,
+     "sparse_rank": 5,
+     "rerank": 0.15921740233898163
+    },
+    {
+     "uuid": "b23665d8-811d-5820-b7e1-5ac6f03d1ad5",
+     "id": "L18",
+     "rrf": 0.030117753623188408,
+     "dense_rank": 9,
+     "sparse_rank": 4,
+     "rerank": 0.12852515280246735
+    },
+    {
+     "uuid": "0c16ac80-66bc-5c41-bfea-263571317d17",
+     "id": "L20",
+     "rrf": 0.029857397504456328,
+     "dense_rank": 8,
+     "sparse_rank": 6,
+     "rerank": 0.09807931631803513
+    },
+    {
+     "uuid": "8bf5e592-2748-5de1-9773-8c8bf2d61979",
+     "id": "S3",
+     "rrf": 0.029273504273504274,
+     "dense_rank": 5,
+     "sparse_rank": 12,
+     "rerank": 0.0019267346942797303
+    },
+    {
+     "uuid": "265b1808-242b-54a2-bc26-9ad2cab03dce",
+     "id": "L06",
+     "rrf": 0.029211087420042643,
+     "dense_rank": 7,
+     "sparse_rank": 10,
+     "rerank": 0.0019877743907272816
+    },
+    {
+     "uuid": "ac83054b-f0a5-5c49-afd9-6f396aeece9d",
+     "id": "L07",
+     "rrf": 0.028850145288501453,
+     "dense_rank": 6,
+     "sparse_rank": 13,
+     "rerank": 0.0019267346942797303
+    },
+    {
+     "uuid": "c00d5875-67ed-5429-85cf-2ce142011a9a",
+     "id": "L32",
+     "rrf": 0.028814262023217248,
+     "dense_rank": 12,
+     "sparse_rank": 7,
+     "rerank": 9.028038766700774e-05
+    },
+    {
+     "uuid": "acd1ab09-3bc0-5c51-98cd-57ba16850311",
+     "id": "L23",
+     "rrf": 0.02877846790890269,
+     "dense_rank": 10,
+     "sparse_rank": 9,
+     "rerank": 0.00020342698553577065
+    },
+    {
+     "uuid": "0f1d7d06-7707-58e4-8ce2-96663c7cdb46",
+     "id": "S8",
+     "rrf": 0.028169014084507043,
+     "dense_rank": 11,
+     "sparse_rank": 11,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "f7aad287-0232-5982-947b-4e791034b1c3",
+     "id": "L01",
+     "rrf": 0.026144907723855092,
+     "dense_rank": 16,
+     "sparse_rank": 17,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "269db150-a890-5969-90c0-6cc099d490fb",
+     "id": "S1",
+     "rrf": 0.025645240835114255,
+     "dense_rank": 17,
+     "sparse_rank": 19,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "1632b67c-62f1-59a8-b7bc-580af89189b4",
+     "id": "S6",
+     "rrf": 0.025603392041748205,
+     "dense_rank": 13,
+     "sparse_rank": 24,
+     "rerank": 0.00023050670279189944
+    },
+    {
+     "uuid": "331b6af6-eb0e-50b2-92e7-d46ce468b187",
+     "id": "L34",
+     "rrf": 0.02523809523809524,
+     "dense_rank": 24,
+     "sparse_rank": 15,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "2f60209e-9c31-5aef-8f6c-8780d43e66ef",
+     "id": "L15",
+     "rrf": 0.02484567901234568,
+     "dense_rank": 21,
+     "sparse_rank": 20,
+     "rerank": 0.00014883848780300468
+    },
+    {
+     "uuid": "59d9cd50-8405-5488-9c82-3791a5325394",
+     "id": "L33",
+     "rrf": 0.02454819277108434,
+     "dense_rank": 20,
+     "sparse_rank": 23,
+     "rerank": 3.53562536474783e-05
+    },
+    {
+     "uuid": "bdb8399e-ff0e-5b47-8d1e-ad7d0b12e47c",
+     "id": "L26",
+     "rrf": 0.024184149184149184,
+     "dense_rank": 28,
+     "sparse_rank": 18,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "81ba606d-be61-5ca3-b723-8782fa16ddf6",
+     "id": "L03",
+     "rrf": 0.024056467876692595,
+     "dense_rank": 18,
+     "sparse_rank": 29,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "aa20d7dc-64f9-5743-8fba-2d693ee3309a",
+     "id": "S5",
+     "rrf": 0.024039829302987197,
+     "dense_rank": 14,
+     "sparse_rank": 35,
+     "rerank": 4.539786823443137e-05
+    },
+    {
+     "uuid": "d10f7730-aa74-5e00-a759-9f1dcc1ca3ea",
+     "id": "L39",
+     "rrf": 0.023717595146166573,
+     "dense_rank": 38,
+     "sparse_rank": 14,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f18e5b40-48a9-5407-a38b-200e7d43cf61",
+     "id": "S2",
+     "rrf": 0.023642611683848798,
+     "dense_rank": 15,
+     "sparse_rank": 37,
+     "rerank": 0.00010229986219201237
+    },
+    {
+     "uuid": "4ef9b640-2907-5f64-a0a1-9de77e04c415",
+     "id": "L25",
+     "rrf": 0.02333469000135667,
+     "dense_rank": 31,
+     "sparse_rank": 21,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "a514d6d6-8743-5404-8249-7943391ba0d0",
+     "id": "L08",
+     "rrf": 0.023306233062330622,
+     "dense_rank": 22,
+     "sparse_rank": 30,
+     "rerank": 2.4300241420860402e-05
+    },
+    {
+     "uuid": "1e5f6b2a-2f01-5bf4-a796-3bc86bdd20aa",
+     "id": "S4",
+     "rrf": 0.02307489451476793,
+     "dense_rank": 19,
+     "sparse_rank": 36,
+     "rerank": 4.264747258275747e-05
+    },
+    {
+     "uuid": "d5bc2cc2-f428-51ce-800f-39b0a5778d2e",
+     "id": "L31",
+     "rrf": 0.02261178861788618,
+     "dense_rank": 36,
+     "sparse_rank": 22,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "6c564633-bea8-549c-81d3-04dfdcca2bae",
+     "id": "L02",
+     "rrf": 0.022517394054395953,
+     "dense_rank": 33,
+     "sparse_rank": 25,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f6ce7fa7-b821-5033-adaa-580a1aa99564",
+     "id": "L13",
+     "rrf": 0.02188995215311005,
+     "dense_rank": 35,
+     "sparse_rank": 28,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f2856e14-38ce-5813-b35b-5742e53bdb86",
+     "id": "L21",
+     "rrf": 0.021595262974573322,
+     "dense_rank": 39,
+     "sparse_rank": 27,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b986d009-c777-57c4-bd21-d78d1b1e5471",
+     "id": "L10",
+     "rrf": 0.021298289339526454,
+     "dense_rank": 37,
+     "sparse_rank": 31,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b965736b-8a5a-59c0-88d6-f338233c617b",
+     "id": "L27",
+     "rrf": 0.014705882352941176,
+     "dense_rank": null,
+     "sparse_rank": 8,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "6956262a-100f-583e-bb79-cc9563947377",
+     "id": "L41",
+     "rrf": 0.013157894736842105,
+     "dense_rank": null,
+     "sparse_rank": 16,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "8ec1ca5c-2107-51a5-a3ca-6e8a4d5f0d58",
+     "id": "L14",
+     "rrf": 0.012048192771084338,
+     "dense_rank": 23,
+     "sparse_rank": null,
+     "rerank": 2.0145689632045105e-05
+    },
+    {
+     "uuid": "479e4637-4c51-57ac-880b-8f8c6b9454cb",
+     "id": "L37",
+     "rrf": 0.011764705882352941,
+     "dense_rank": 25,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "7bd228b4-95a4-53f9-9b50-0dd5f3a795db",
+     "id": "L04",
+     "rrf": 0.011627906976744186,
+     "dense_rank": 26,
+     "sparse_rank": null,
+     "rerank": 3.120191104244441e-05
+    },
+    {
+     "uuid": "b7a2e36f-7778-500a-8fa8-3f4990736272",
+     "id": "L28",
+     "rrf": 0.011627906976744186,
+     "dense_rank": null,
+     "sparse_rank": 26,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "913d4ae3-5c93-56f5-98c0-59e98e271d64",
+     "id": "L05",
+     "rrf": 0.011494252873563218,
+     "dense_rank": 27,
+     "sparse_rank": null,
+     "rerank": 4.539786823443137e-05
+    },
+    {
+     "uuid": "33f23cf4-be7f-5453-ab60-97bdbdbb481a",
+     "id": "L12",
+     "rrf": 0.011235955056179775,
+     "dense_rank": 29,
+     "sparse_rank": null,
+     "rerank": 2.586742994026281e-05
+    },
+    {
+     "uuid": "37a4454a-727f-593f-be10-cad6eeddb3a6",
+     "id": "L09",
+     "rrf": 0.011111111111111112,
+     "dense_rank": 30,
+     "sparse_rank": null,
+     "rerank": 2.1444948288262822e-05
+    },
+    {
+     "uuid": "37c9e676-0872-51ca-ab29-884c029e4c1d",
+     "id": "L24",
+     "rrf": 0.010869565217391304,
+     "dense_rank": 32,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "ba58215c-4388-582a-bafd-815364f7d285",
+     "id": "L29",
+     "rrf": 0.010869565217391304,
+     "dense_rank": null,
+     "sparse_rank": 32,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f27c4969-3b4a-5a1e-83d7-2ed4f41d836d",
+     "id": "L38",
+     "rrf": 0.010752688172043012,
+     "dense_rank": null,
+     "sparse_rank": 33,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "b0002fa0-f96d-5e28-b07f-3ab6b6facf3b",
+     "id": "L11",
+     "rrf": 0.010638297872340425,
+     "dense_rank": 34,
+     "sparse_rank": null,
+     "rerank": 5.829126530443318e-05
+    },
+    {
+     "uuid": "f9f0c81a-a89e-5dab-b8c3-8bba40870758",
+     "id": "L35",
+     "rrf": 0.010638297872340425,
+     "dense_rank": null,
+     "sparse_rank": 34,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "39238503-45e4-5431-b41f-ad5d5d83ac38",
+     "id": "L22",
+     "rrf": 0.01,
+     "dense_rank": 40,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    }
+   ],
+   "spine": {
+    "parent_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 10
+     },
+     "chunks": [
+      {
+       "id": "L17",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "S7",
+        "L19",
+        "L18",
+        "L16",
+        "L20"
+       ]
+      },
+      {
+       "id": "L06",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "S3",
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "S6",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L15"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S2",
+       "chars": 356,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L11",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "S5"
+       ]
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "leaf_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "leaf_only": 8
+      }
+     },
+     "chunks": [
+      {
+       "id": "L17",
+       "chars": 122,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L19",
+       "chars": 127,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L18",
+       "chars": 125,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L16",
+       "chars": 123,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L20",
+       "chars": 124,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L06",
+       "chars": 177,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L07",
+       "chars": 143,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "parent_down": {
+     "degraded": true,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 9
+     },
+     "chunks": [
+      {
+       "id": "L17",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "S7",
+        "L16",
+        "L19",
+        "L18",
+        "L20"
+       ]
+      },
+      {
+       "id": "S3",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L06",
+        "L07"
+       ]
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L01",
+       "chars": 382,
+       "expanded": true,
+       "merged": [
+        "S1"
+       ]
+      },
+      {
+       "id": "S6",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L15"
+       ]
+      },
+      {
+       "id": "L34",
+       "chars": 201,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "sections_off": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "section_hits_off": 8
+      },
+      "repeats_merged": 7
+     },
+     "chunks": [
+      {
+       "id": "L17",
+       "chars": 625,
+       "expanded": true,
+       "merged": [
+        "L19",
+        "L18",
+        "L16",
+        "L20"
+       ]
+      },
+      {
+       "id": "L06",
+       "chars": 473,
+       "expanded": true,
+       "merged": [
+        "L07",
+        "L05"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L15",
+       "chars": 276,
+       "expanded": true,
+       "merged": []
+      },
+      {
+       "id": "L32",
+       "chars": 210,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L11",
+       "chars": 548,
+       "expanded": true,
+       "merged": [
+        "L12"
+       ]
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L04",
+       "chars": 356,
+       "expanded": true,
+       "merged": []
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "badge",
+   "candidates": [
+    {
+     "uuid": "39238503-45e4-5431-b41f-ad5d5d83ac38",
+     "id": "L22",
+     "rrf": 0.03252247488101534,
+     "dense_rank": 1,
+     "sparse_rank": 2,
+     "rerank": 0.16238003969192505
+    },
+    {
+     "uuid": "0f1d7d06-7707-58e4-8ce2-96663c7cdb46",
+     "id": "S8",
+     "rrf": 0.031054405392392875,
+     "dense_rank": 2,
+     "sparse_rank": 7,
+     "rerank": 0.10669060051441193
+    },
+    {
+     "uuid": "ba58215c-4388-582a-bafd-815364f7d285",
+     "id": "L29",
+     "rrf": 0.02967032967032967,
+     "dense_rank": 10,
+     "sparse_rank": 5,
+     "rerank": 0.00017952795315068215
+    },
+    {
+     "uuid": "59d9cd50-8405-5488-9c82-3791a5325394",
+     "id": "L33",
+     "rrf": 0.029211087420042643,
+     "dense_rank": 7,
+     "sparse_rank": 10,
+     "rerank": 0.00015843621804378927
+    },
+    {
+     "uuid": "2f60209e-9c31-5aef-8f6c-8780d43e66ef",
+     "id": "L15",
+     "rrf": 0.029083245521601686,
+     "dense_rank": 5,
+     "sparse_rank": 13,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "aa20d7dc-64f9-5743-8fba-2d693ee3309a",
+     "id": "S5",
+     "rrf": 0.02889344262295082,
+     "dense_rank": 20,
+     "sparse_rank": 1,
+     "rerank": 2.2827996872365475e-05
+    },
+    {
+     "uuid": "1632b67c-62f1-59a8-b7bc-580af89189b4",
+     "id": "S6",
+     "rrf": 0.02886002886002886,
+     "dense_rank": 3,
+     "sparse_rank": 17,
+     "rerank": 0.00012339458044152707
+    },
+    {
+     "uuid": "37c9e676-0872-51ca-ab29-884c029e4c1d",
+     "id": "L24",
+     "rrf": 0.02797339593114241,
+     "dense_rank": 11,
+     "sparse_rank": 12,
+     "rerank": 4.539786823443137e-05
+    },
+    {
+     "uuid": "b29fa27e-17a8-5dbe-9984-ca2b477cec29",
+     "id": "L30",
+     "rrf": 0.027972027972027972,
+     "dense_rank": 18,
+     "sparse_rank": 6,
+     "rerank": 2.586742994026281e-05
+    },
+    {
+     "uuid": "1e5f6b2a-2f01-5bf4-a796-3bc86bdd20aa",
+     "id": "S4",
+     "rrf": 0.027650648360030512,
+     "dense_rank": 9,
+     "sparse_rank": 16,
+     "rerank": 2.1444948288262822e-05
+    },
+    {
+     "uuid": "acd1ab09-3bc0-5c51-98cd-57ba16850311",
+     "id": "L23",
+     "rrf": 0.02637768817204301,
+     "dense_rank": 4,
+     "sparse_rank": 33,
+     "rerank": 0.00012339458044152707
+    },
+    {
+     "uuid": "8ec1ca5c-2107-51a5-a3ca-6e8a4d5f0d58",
+     "id": "L14",
+     "rrf": 0.026262626262626265,
+     "dense_rank": 6,
+     "sparse_rank": 30,
+     "rerank": 8.481104305246845e-05
+    },
+    {
+     "uuid": "b986d009-c777-57c4-bd21-d78d1b1e5471",
+     "id": "L10",
+     "rrf": 0.025934278350515462,
+     "dense_rank": 37,
+     "sparse_rank": 4,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "37a4454a-727f-593f-be10-cad6eeddb3a6",
+     "id": "L09",
+     "rrf": 0.02574682290807064,
+     "dense_rank": 13,
+     "sparse_rank": 23,
+     "rerank": 2.0145689632045105e-05
+    },
+    {
+     "uuid": "a514d6d6-8743-5404-8249-7943391ba0d0",
+     "id": "L08",
+     "rrf": 0.025679012345679014,
+     "dense_rank": 21,
+     "sparse_rank": 15,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "479e4637-4c51-57ac-880b-8f8c6b9454cb",
+     "id": "L37",
+     "rrf": 0.025603864734299518,
+     "dense_rank": 30,
+     "sparse_rank": 9,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f2856e14-38ce-5813-b35b-5742e53bdb86",
+     "id": "L21",
+     "rrf": 0.025448143405889884,
+     "dense_rank": 28,
+     "sparse_rank": 11,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "c00d5875-67ed-5429-85cf-2ce142011a9a",
+     "id": "L32",
+     "rrf": 0.02541827541827542,
+     "dense_rank": 24,
+     "sparse_rank": 14,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "33f23cf4-be7f-5453-ab60-97bdbdbb481a",
+     "id": "L12",
+     "rrf": 0.024705882352941175,
+     "dense_rank": 40,
+     "sparse_rank": 8,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f18e5b40-48a9-5407-a38b-200e7d43cf61",
+     "id": "S2",
+     "rrf": 0.024695121951219513,
+     "dense_rank": 22,
+     "sparse_rank": 20,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "2ce13ca9-9dc8-53e5-91d6-c5142c77e1af",
+     "id": "L36",
+     "rrf": 0.02419816723940435,
+     "dense_rank": 12,
+     "sparse_rank": 37,
+     "rerank": 2.2827996872365475e-05
+    },
+    {
+     "uuid": "7bd228b4-95a4-53f9-9b50-0dd5f3a795db",
+     "id": "L04",
+     "rrf": 0.023809523809523808,
+     "dense_rank": 31,
+     "sparse_rank": 18,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "331b6af6-eb0e-50b2-92e7-d46ce468b187",
+     "id": "L34",
+     "rrf": 0.023647238837112255,
+     "dense_rank": 19,
+     "sparse_rank": 31,
+     "rerank": 4.264747258275747e-05
+    },
+    {
+     "uuid": "bdb8399e-ff0e-5b47-8d1e-ad7d0b12e47c",
+     "id": "L26",
+     "rrf": 0.023614523614523618,
+     "dense_rank": 14,
+     "sparse_rank": 39,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "d5bc2cc2-f428-51ce-800f-39b0a5778d2e",
+     "id": "L31",
+     "rrf": 0.02318454363757495,
+     "dense_rank": 35,
+     "sparse_rank": 19,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f27c4969-3b4a-5a1e-83d7-2ed4f41d836d",
+     "id": "L38",
+     "rrf": 0.02314071696094168,
+     "dense_rank": 29,
+     "sparse_rank": 24,
+     "rerank": 1.7778553228708915e-05
+    },
+    {
+     "uuid": "ac83054b-f0a5-5c49-afd9-6f396aeece9d",
+     "id": "L07",
+     "rrf": 0.022987012987012986,
+     "dense_rank": 17,
+     "sparse_rank": 40,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "d97f21c2-e777-5fab-b512-874eebadb963",
+     "id": "S7",
+     "rrf": 0.022549760644998737,
+     "dense_rank": 38,
+     "sparse_rank": 21,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "b23665d8-811d-5820-b7e1-5ac6f03d1ad5",
+     "id": "L18",
+     "rrf": 0.02224694104560623,
+     "dense_rank": 33,
+     "sparse_rank": 27,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "269db150-a890-5969-90c0-6cc099d490fb",
+     "id": "S1",
+     "rrf": 0.022132550745903645,
+     "dense_rank": 27,
+     "sparse_rank": 34,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "6956262a-100f-583e-bb79-cc9563947377",
+     "id": "L41",
+     "rrf": 0.021968787515006,
+     "dense_rank": 25,
+     "sparse_rank": 38,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "81ba606d-be61-5ca3-b723-8782fa16ddf6",
+     "id": "L03",
+     "rrf": 0.02094298245614035,
+     "dense_rank": 36,
+     "sparse_rank": 35,
+     "rerank": 2.1444948288262822e-05
+    },
+    {
+     "uuid": "f6ce7fa7-b821-5033-adaa-580a1aa99564",
+     "id": "L13",
+     "rrf": 0.015873015873015872,
+     "dense_rank": null,
+     "sparse_rank": 3,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "8bf5e592-2748-5de1-9773-8c8bf2d61979",
+     "id": "S3",
+     "rrf": 0.014705882352941176,
+     "dense_rank": 8,
+     "sparse_rank": null,
+     "rerank": 2.7535690605873242e-05
+    },
+    {
+     "uuid": "b965736b-8a5a-59c0-88d6-f338233c617b",
+     "id": "L27",
+     "rrf": 0.013333333333333334,
+     "dense_rank": 15,
+     "sparse_rank": null,
+     "rerank": 2.2827996872365475e-05
+    },
+    {
+     "uuid": "265b1808-242b-54a2-bc26-9ad2cab03dce",
+     "id": "L06",
+     "rrf": 0.013157894736842105,
+     "dense_rank": 16,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "b0002fa0-f96d-5e28-b07f-3ab6b6facf3b",
+     "id": "L11",
+     "rrf": 0.012195121951219513,
+     "dense_rank": null,
+     "sparse_rank": 22,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "4ef9b640-2907-5f64-a0a1-9de77e04c415",
+     "id": "L25",
+     "rrf": 0.012048192771084338,
+     "dense_rank": 23,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "c3d71f4f-4dee-51a8-85db-4dcad574130c",
+     "id": "L16",
+     "rrf": 0.011764705882352941,
+     "dense_rank": null,
+     "sparse_rank": 25,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "d0b4a2fa-8461-5d3d-a796-fea2c256bb2a",
+     "id": "L17",
+     "rrf": 0.011627906976744186,
+     "dense_rank": null,
+     "sparse_rank": 26,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "d10f7730-aa74-5e00-a759-9f1dcc1ca3ea",
+     "id": "L39",
+     "rrf": 0.011627906976744186,
+     "dense_rank": 26,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "b2ce3e8c-e837-5981-a839-8b168591639d",
+     "id": "L19",
+     "rrf": 0.011363636363636364,
+     "dense_rank": null,
+     "sparse_rank": 28,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "0c16ac80-66bc-5c41-bfea-263571317d17",
+     "id": "L20",
+     "rrf": 0.011235955056179775,
+     "dense_rank": null,
+     "sparse_rank": 29,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "913d4ae3-5c93-56f5-98c0-59e98e271d64",
+     "id": "L05",
+     "rrf": 0.010869565217391304,
+     "dense_rank": 32,
+     "sparse_rank": null,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "bdf7ea25-2c95-5728-bf27-997a4d8d78ef",
+     "id": "L40",
+     "rrf": 0.010869565217391304,
+     "dense_rank": null,
+     "sparse_rank": 32,
+     "rerank": 1.6701422282494605e-05
+    },
+    {
+     "uuid": "f7aad287-0232-5982-947b-4e791034b1c3",
+     "id": "L01",
+     "rrf": 0.010638297872340425,
+     "dense_rank": 34,
+     "sparse_rank": null,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "6c564633-bea8-549c-81d3-04dfdcca2bae",
+     "id": "L02",
+     "rrf": 0.010416666666666666,
+     "dense_rank": null,
+     "sparse_rank": 36,
+     "rerank": 1.5689549400121905e-05
+    },
+    {
+     "uuid": "f9f0c81a-a89e-5dab-b8c3-8bba40870758",
+     "id": "L35",
+     "rrf": 0.010101010101010102,
+     "dense_rank": 39,
+     "sparse_rank": null,
+     "rerank": 1.8925147742265835e-05
+    }
+   ],
+   "spine": {
+    "parent_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 1
+     },
+     "chunks": [
+      {
+       "id": "L22",
+       "chars": 200,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L29",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S6",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "L14"
+       ]
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L24",
+       "chars": 171,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L34",
+       "chars": 201,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S3",
+       "chars": 473,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "leaf_up": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "leaf_only": 8
+      }
+     },
+     "chunks": [
+      {
+       "id": "L22",
+       "chars": 200,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L29",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L14",
+       "chars": 178,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L24",
+       "chars": 171,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L34",
+       "chars": 201,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L30",
+       "chars": 208,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "parent_down": {
+     "degraded": true,
+     "diagnostics": {
+      "sections_set_aside": {
+       "oversize": 1
+      },
+      "repeats_merged": 1
+     },
+     "chunks": [
+      {
+       "id": "L22",
+       "chars": 200,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L29",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L15",
+       "chars": 276,
+       "expanded": true,
+       "merged": [
+        "S6"
+       ]
+      },
+      {
+       "id": "S5",
+       "chars": 548,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L24",
+       "chars": 171,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L30",
+       "chars": 208,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "S4",
+       "chars": 335,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    },
+    "sections_off": {
+     "degraded": false,
+     "diagnostics": {
+      "sections_set_aside": {
+       "section_hits_off": 8
+      }
+     },
+     "chunks": [
+      {
+       "id": "L22",
+       "chars": 200,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L29",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L33",
+       "chars": 219,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L23",
+       "chars": 193,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L14",
+       "chars": 276,
+       "expanded": true,
+       "merged": []
+      },
+      {
+       "id": "L24",
+       "chars": 171,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L34",
+       "chars": 201,
+       "expanded": false,
+       "merged": []
+      },
+      {
+       "id": "L30",
+       "chars": 208,
+       "expanded": false,
+       "merged": []
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

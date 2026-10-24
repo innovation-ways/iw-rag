@@ -208,9 +208,25 @@ class TextParser:
             text = source.local_path().read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise ParseError(f"failed to read {source.uri}: {exc}") from exc
-        blocks = _split_markdown_blocks(text)
-        title = next((b.text for b in blocks if b.block_type == "heading"), None)
-        return ParsedDocument(source_uri=source.uri, blocks=blocks, full_text=text, title=title)
+        return parse_markdown_text(text, source.uri)
+
+
+def parse_markdown_text(text: str, source_uri: str) -> ParsedDocument:
+    """Parse markdown/plain text already in memory into a :class:`ParsedDocument`.
+
+    This is the same logic :class:`TextParser` applies to a file, exposed so callers
+    that hold the text (the Learn section's chunking lab) need no temporary file.
+
+    Args:
+        text: Raw markdown or plain text.
+        source_uri: Logical identifier recorded on the result.
+
+    Returns:
+        A ParsedDocument with heading/table/text blocks.
+    """
+    blocks = _split_markdown_blocks(text)
+    title = next((b.text for b in blocks if b.block_type == "heading"), None)
+    return ParsedDocument(source_uri=source_uri, blocks=blocks, full_text=text, title=title)
 
 
 class DoclingParser:
