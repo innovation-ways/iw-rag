@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from functools import lru_cache
 from typing import Any, Literal
 
 from iw_rag.domain.acl import AccessContext
@@ -225,6 +226,28 @@ def _drop_allowlisted(text: str, results: list[Any], allow_text: str | None) -> 
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=1)
+def _presidio_engines() -> tuple[Any, Any]:
+    """Build the Presidio analyzer/anonymizer once per process.
+
+    ``AnalyzerEngine()`` loads the spaCy model (~1 s), so constructing it on every
+    call would add that to each redaction. An ``ImportError`` (guardrails group
+    missing) is raised, not cached, so installing the group takes effect without
+    a restart.
+
+    Returns:
+        ``(AnalyzerEngine, AnonymizerEngine)``.
+
+    Raises:
+        ImportError: Presidio is not installed.
+    """
+    # Lazy import — presidio lives in the optional guardrails dep group.
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_anonymizer import AnonymizerEngine
+
+    return AnalyzerEngine(), AnonymizerEngine()
+
+
 async def _presidio_redact(text: str, ctx: AccessContext, *, allow_text: str | None = None) -> str:
     """Redact PII from ``text`` using Presidio (CPU-only, lazily imported).
 
@@ -249,18 +272,13 @@ async def _presidio_redact(text: str, ctx: AccessContext, *, allow_text: str | N
         accepted residual risk — R-00108 F4).
     """
     try:
-        # Lazy import — presidio lives in the optional guardrails dep group.
-        from presidio_analyzer import AnalyzerEngine
-        from presidio_anonymizer import AnonymizerEngine
+        analyzer, anonymizer = _presidio_engines()
     except ImportError:
         logger.warning(
             "presidio_analyzer/presidio_anonymizer not installed; PII redaction skipped. "
             "Add the 'guardrails' dependency group: uv sync --group guardrails"
         )
         return text
-
-    analyzer = AnalyzerEngine()
-    anonymizer = AnonymizerEngine()
 
     results = analyzer.analyze(text=text, language="en")
     filtered = clearance_filter(results, ctx)

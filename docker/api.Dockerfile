@@ -40,7 +40,14 @@ COPY config ./config
 # --group pdf installs Playwright so POST-run reports can be exported to PDF via
 # headless Chromium (GET /benchmark/reports/{id}/pdf). The browser binary + its
 # system libraries are installed below.
-RUN uv sync --no-dev --frozen --group observability --group docman --group gpu-telemetry --group eval-ragas --group pdf
+# --group guardrails installs Presidio (PII redaction in sanitize / output guard). Without
+# it redaction is skipped with only a log warning. Presidio needs a spaCy model at
+# runtime, baked in below so the container never downloads anything when it runs.
+RUN uv sync --no-dev --frozen --group observability --group docman --group gpu-telemetry --group eval-ragas --group pdf --group guardrails
+
+# spaCy model for Presidio's default AnalyzerEngine (en_core_web_lg, ~400 MB).
+RUN uv pip install --system \
+    "https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl"
 
 # Chromium + its system libraries for the PDF export path (Playwright). Adds
 # ~400 MB to the image; only used by the benchmark report export route.

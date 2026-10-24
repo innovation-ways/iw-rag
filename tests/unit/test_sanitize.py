@@ -586,3 +586,37 @@ async def test_sanitize_context_drops_chunk_when_scanner_raises() -> None:
     assert "cx" not in surviving_ids, (
         "Poisoned chunk must be excluded from result.chunks when scanner raises"
     )
+
+
+def test_presidio_engines_are_built_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The spaCy-backed analyzer is constructed once per process, not per call."""
+    import sys
+    import types
+
+    from iw_rag.guardrails import sanitize as sanitize_mod
+
+    built: list[str] = []
+
+    class _Analyzer:
+        def __init__(self) -> None:
+            built.append("analyzer")
+
+    class _Anonymizer:
+        def __init__(self) -> None:
+            built.append("anonymizer")
+
+    analyzer_mod = types.ModuleType("presidio_analyzer")
+    analyzer_mod.AnalyzerEngine = _Analyzer  # type: ignore[attr-defined]
+    anonymizer_mod = types.ModuleType("presidio_anonymizer")
+    anonymizer_mod.AnonymizerEngine = _Anonymizer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "presidio_analyzer", analyzer_mod)
+    monkeypatch.setitem(sys.modules, "presidio_anonymizer", anonymizer_mod)
+    sanitize_mod._presidio_engines.cache_clear()
+    try:
+        first = sanitize_mod._presidio_engines()
+        second = sanitize_mod._presidio_engines()
+    finally:
+        sanitize_mod._presidio_engines.cache_clear()
+
+    assert first is second
+    assert built == ["analyzer", "anonymizer"]
