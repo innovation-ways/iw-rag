@@ -14,3 +14,14 @@ services:
       IW_RAG__GUARDRAILS__ENABLED: "true"
       IW_RAG__MODELS__GUARD_INJECTION__ENDPOINT: http://injguard:8003
       IW_RAG__MODELS__GUARD_SAFETY__ENDPOINT: http://iw-rag-vllm-guard:8004/v1
+      # Guards-on VRAM budget (32 GB card shared with other projects): the Granite
+      # guard holds ~7 GB, so the generator runs at --gpu-memory-utilization 0.45
+      # (see compose.guards-sidecars.yaml) and its pre-check estimate drops to match.
+      IW_RAG__POWER__COMPONENTS__GENERATOR__VRAM_GB: "15"
+      IW_RAG__POWER__CAPACITY_MARGIN_GB: "1.5"
+      IW_RAG__POWER__YIELD_FREE_GB_THRESHOLD: "1.0"
+  system-control:
+    environment:
+      IW_RAG__POWER__COMPONENTS__GENERATOR__VRAM_GB: "15"
+      IW_RAG__POWER__CAPACITY_MARGIN_GB: "1.5"
+      IW_RAG__POWER__YIELD_FREE_GB_THRESHOLD: "1.0"
