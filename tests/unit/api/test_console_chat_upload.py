@@ -206,3 +206,121 @@ def test_console_upload_page_html_inline_script_parses() -> None:
     assert page.count("window.onConsoleReady = function") == 1, (
         "the upload view must define exactly one onConsoleReady entrypoint"
     )
+
+
+def test_console_upload_page_html_has_view_button_for_browser_renderable_types() -> None:
+    html = console_upload_page_html()
+    assert 'data-view="' in html
+    assert "function viewDoc(" in html or "async function viewDoc(" in html
+    # Opened in a new tab from a typed blob, not by navigating the console.
+    assert 'window.open("", "_blank")' in html
+
+
+def _extract_preview_type_fn() -> str:
+    pattern = r"function previewType\(mime, filename\) \{.*?\n  \}\n"
+    m = re.search(pattern, console_upload_page_html(), re.S)
+    assert m, "previewType() not found in upload page script"
+    return m.group(0)
+
+
+def test_preview_type_allows_only_browser_safe_types() -> None:
+    import json
+    import shutil
+
+    node = shutil.which("node")
+    if node is None:
+        return  # No node in this env — skip the JS-side assertion.
+    cases = {
+        ("application/pdf", "a.pdf"): "application/pdf",
+        ("image/png", "a.png"): "image/png",
+        ("text/plain", "a.txt"): "text/plain;charset=utf-8",
+        ("text/markdown", "a.md"): "text/plain;charset=utf-8",
+        ("application/octet-stream", "a.csv"): "text/plain;charset=utf-8",
+        ("text/html", "a.html"): "",
+        ("image/svg+xml", "a.svg"): "",
+        ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "a.docx"): "",
+        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "a.xlsx"): "",
+        ("", ""): "",
+    }
+    script = (
+        _extract_preview_type_fn()
+        + f"const cases = {json.dumps([[list(k), v] for k, v in cases.items()])};"
+        + "const bad = cases.filter(([a, want]) => previewType(a[0], a[1]) !== want);"
+        + "console.log(JSON.stringify(bad));"
+    )
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "[]", f"previewType mismatches: {out.stdout}"
+
+
+def _run_view_doc(scenario: str) -> dict[str, object]:
+    """Run the page's real ``viewDoc`` in node against stubbed window/fetch/toast."""
+    import json
+    import shutil
+
+    node = shutil.which("node")
+    if node is None:
+        return {}
+    html = console_upload_page_html()
+    m = re.search(r"async function viewDoc\(id, type\) \{.*?\n  \}\n", html, re.S)
+    assert m, "viewDoc() not found in upload page script"
+    harness = f"""
+    var _API = "/api", _ah = function () {{ return {{ Authorization: "Bearer t" }}; }};
+    var log = {{ toasts: [], closed: false, href: null, fetched: null, blobType: null }};
+    var _toast = function (msg, err) {{ log.toasts.push([msg, !!err]); }};
+    var scenario = {json.dumps(scenario)};
+    var tab = {{ close: function () {{ log.closed = true; }}, location: {{}} }};
+    Object.defineProperty(tab.location, "href", {{ set: function (v) {{ log.href = v; }} }});
+    var window = {{ open: function () {{ return scenario === "blocked" ? null : tab; }} }};
+    var fetch = async function (url, opts) {{
+      log.fetched = [url, opts.headers.Authorization];
+      var status = scenario === "401" ? 401 : scenario === "404" ? 404 : 200;
+      var blob = async function () {{ return new Blob(["x"]); }};
+      return {{ status: status, ok: status === 200, blob: blob }};
+    }};
+    URL.createObjectURL = function (b) {{ log.blobType = b.type; return "blob:stub"; }};
+    URL.revokeObjectURL = function () {{}};
+    var setTimeout = function () {{}};  // the real 60 s revoke timer would keep node alive
+    {m.group(0)}
+    viewDoc("abc 1", "application/pdf").then(function () {{ console.log(JSON.stringify(log)); }});
+    """
+    out = subprocess.run([node, "-e", harness], capture_output=True, text=True, timeout=10)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout.strip().splitlines()[-1])  # type: ignore[no-any-return]
+
+
+def test_view_doc_opens_typed_blob_in_new_tab_with_bearer() -> None:
+    log = _run_view_doc("ok")
+    if not log:
+        return  # No node in this env.
+    assert log["fetched"] == ["/api/documents/abc%201/raw", "Bearer t"]
+    assert log["blobType"] == "application/pdf"
+    assert log["href"] == "blob:stub"
+    assert log["closed"] is False
+
+
+def test_view_doc_failures_close_the_tab_and_toast() -> None:
+    for scenario, fragment in (("401", "Session expired"), ("404", "Cannot open document (404)")):
+        log = _run_view_doc(scenario)
+        if not log:
+            return
+        assert log["closed"] is True
+        assert log["href"] is None
+        assert fragment in str(log["toasts"]), (scenario, log)
+
+
+def test_view_doc_popup_blocked_does_not_fetch() -> None:
+    log = _run_view_doc("blocked")
+    if not log:
+        return
+    assert log["fetched"] is None
+    assert "Popup blocked" in str(log["toasts"])
+
+
+def test_upload_actions_column_fits_view_download_delete() -> None:
+    html = console_upload_page_html()
+    m = re.search(r"\.up-col-act\s*\{\s*width:\s*(\d+)px", html)
+    assert m, "actions column width not found"
+    # View + Download + Delete need ~210px; 148px (two buttons) overlapped the Added column.
+    assert int(m.group(1)) >= 210
+    assert re.search(r"\.up-act\s*\{[^}]*flex-wrap:\s*wrap", html)

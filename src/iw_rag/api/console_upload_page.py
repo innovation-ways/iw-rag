@@ -149,7 +149,7 @@ _UP_CSS = """
   .up-col-size  { width: 80px; }
   .up-col-chunks { width: 72px; }
   .up-col-added { width: 140px; }
-  .up-col-act   { width: 148px; }
+  .up-col-act   { width: 220px; }  /* View + Download + Delete */
   .up-th { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
   .up-th.sortable { cursor: pointer; -webkit-user-select: none; user-select: none; }
   .up-th.sortable:hover { color: var(--teal); }
@@ -162,7 +162,7 @@ _UP_CSS = """
   .up-vis-pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; min-width: 72px; display: inline-block; }
   .up-vis-pill.common   { color: var(--teal); border-color: var(--teal-deep); }
   .up-vis-pill.specific { color: #c0a3ff; border-color: #4a3b6b; }
-  .up-act { display: flex; gap: 6px; justify-content: flex-end; }
+  .up-act { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
   .up-act button { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
   .up-empty { color: var(--muted); text-align: center; padding: 36px 0; font-size: 14px; }
   /* --- Pagination bar ---------------------------------------------------- */
@@ -343,6 +343,9 @@ _UP_JS = r"""<script>
       var delHtml = d.is_owner
         ? '<button type="button" class="btn-danger" data-del="' + _esc(d.id) + '" data-delname="' + _esc(displayName) + '">Delete</button>'
         : "";
+      var viewHtml = previewType(d.mime, d.filename)
+        ? '<button type="button" class="btn-ghost" data-view="' + _esc(d.id) + '" data-viewtype="' + _esc(previewType(d.mime, d.filename)) + '">View</button>'
+        : "";
       tr.innerHTML =
         '<td class="up-td"><span class="up-fname" title="' + _esc(displayName) + '">' + _esc(displayName) + '</span>' +
           '<span class="up-meta">' + _esc(d.mime || "") + (d.chunk_count === 0 ? ' &middot; &#9888; no text extracted' : '') + '</span></td>' +
@@ -350,7 +353,7 @@ _UP_JS = r"""<script>
         '<td class="up-td">' + _esc(humanSize(d.size_bytes)) + '</td>' +
         '<td class="up-td">' + _esc(String(d.chunk_count || 0)) + '</td>' +
         '<td class="up-td">' + _esc(fmtDate(d.created_at)) + '</td>' +
-        '<td class="up-td"><div class="up-act">' +
+        '<td class="up-td"><div class="up-act">' + viewHtml +
           '<button type="button" class="btn-ghost" data-dl="' + _esc(d.id) + '" data-dlname="' + _esc(d.filename || displayName) + '">Download</button>' +
           delHtml +
         '</div></td>';
@@ -583,6 +586,50 @@ _UP_JS = r"""<script>
   }
 
   /**
+   * MIME type a document may be previewed as in the browser, or "" when it
+   * can only be downloaded (Office files, HTML/SVG — which would run with the
+   * console's origin — and anything unknown).  Text-like types are served
+   * back as text/plain so the browser never interprets them as markup.
+   *
+   * @param {string} mime - Stored MIME type.
+   * @param {string} filename - Stored filename (extension fallback).
+   * @returns {string} Preview MIME type, or "".
+   */
+  function previewType(mime, filename) {
+    var m = (mime || "").toLowerCase().split(";")[0].trim();
+    var ext = ((filename || "").split(".").pop() || "").toLowerCase();
+    if (m === "application/pdf" || ext === "pdf") { return "application/pdf"; }
+    if (/^image\/(png|jpeg|gif|webp|bmp)$/.test(m)) { return m; }
+    if (m === "text/html" || ext === "html" || ext === "htm") { return ""; }
+    if (m.indexOf("text/") === 0 || m === "application/json" ||
+        ["txt", "md", "csv", "json", "log"].indexOf(ext) !== -1) { return "text/plain;charset=utf-8"; }
+    return "";
+  }
+
+  /**
+   * Open a document inline in a new tab (fetch → typed blob).  The tab is
+   * opened synchronously so the popup blocker allows it.
+   *
+   * @param {string} id - Document id.
+   * @param {string} type - Preview MIME type from previewType().
+   * @returns {Promise<void>}
+   */
+  async function viewDoc(id, type) {
+    var w = window.open("", "_blank");
+    if (!w) { _toast("Popup blocked — allow popups to view documents.", true); return; }
+    w.opener = null;
+    try {
+      var r = await fetch(_API + "/documents/" + encodeURIComponent(id) + "/raw", { headers: _ah() });
+      if (r.status === 401) { w.close(); _toast("Session expired — sign in again.", true); return; }
+      if (!r.ok) { w.close(); _toast("Cannot open document (" + r.status + ")", true); return; }
+      var blob = new Blob([await r.blob()], { type: type });
+      var url = URL.createObjectURL(blob);
+      w.location.href = url;
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    } catch (e) { w.close(); _toast("Open failed: " + e, true); }
+  }
+
+  /**
    * Delete a document after confirmation, then refresh the table.
    *
    * @param {string} id - Document id to delete.
@@ -706,6 +753,7 @@ _UP_JS = r"""<script>
       var th = t.closest && t.closest("th.sortable");
       if (th && th.dataset && th.dataset.sort) { setSort(th.dataset.sort); return; }
       // Download button
+      if (t.dataset && t.dataset.view) { viewDoc(t.dataset.view, t.dataset.viewtype || ""); return; }
       if (t.dataset && t.dataset.dl) { downloadDoc(t.dataset.dl, t.dataset.dlname || ""); return; }
       // Delete button
       if (t.dataset && t.dataset.del) { deleteDoc(t.dataset.del, t.dataset.delname || t.dataset.del); return; }
