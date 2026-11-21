@@ -167,7 +167,10 @@ def test_power_gpu_knobs_resolve_from_yaml_and_env(monkeypatch: pytest.MonkeyPat
     assert s.power.yield_free_gb_threshold == 1.5  # type: ignore[attr-defined]
     assert s.power.capacity_margin_gb == 3.0  # type: ignore[attr-defined]
     assert set(s.power.profiles) == {"normal", "light", "yield"}  # type: ignore[attr-defined]
-    assert s.power.components["generator"].vram_gb == 18.0  # type: ignore[attr-defined]
+    # Measured resident footprint of the serving generator at --gpu-memory-utilization
+    # 0.40 (guards-on): ~14.9 GB. An over-estimate makes block-and-warm refuse a
+    # start that actually fits on the shared card (spurious gpu_busy).
+    assert s.power.components["generator"].vram_gb == 15.0  # type: ignore[attr-defined]
 
 
 def test_default_yaml_profiles_are_not_mangled_by_yaml_booleans(

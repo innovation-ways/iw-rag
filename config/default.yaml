@@ -231,7 +231,10 @@ power:
       label: "Generator (LLM)"
       description: "The vLLM generator — the dominant VRAM consumer (~10-18 GB)."
       idle_unload: true
-      vram_gb: 18
+      # Measured resident footprint at --gpu-memory-utilization 0.40 (guards-on
+      # serving): ~14.9 GB. Keep this honest — the capacity precheck uses it, and an
+      # over-estimate makes block-and-warm refuse a start that fits (gpu_busy).
+      vram_gb: 15
       yield_unload: true
     embedder:
       containers: ["iw-rag-infinity-1"]
