@@ -38,6 +38,8 @@ services:
     command:
       - sh
       - -c
+      # Canonical: meta-llama/Llama-Prompt-Guard-2-86M (gated). Default = deberta stand-in.
+      INJGUARD_MODEL: ${INJGUARD_MODEL:-protectai/deberta-v3-base-prompt-injection-v2}
       - >-
         pip install -q torch --index-url https://download.pytorch.org/whl/cpu &&
         pip install -q transformers fastapi 'uvicorn[standard]' sentencepiece &&

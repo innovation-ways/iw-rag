@@ -12,12 +12,18 @@ map the model's INJECTION class to that label. CPU-only (no VRAM contention).
 
 from __future__ import annotations
 
+import os
+
 import torch
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-_MODEL = "protectai/deberta-v3-base-prompt-injection-v2"
+# INJGUARD_MODEL selects the classifier. The default stays the ungated deberta
+# stand-in; set it to the canonical gated `meta-llama/Llama-Prompt-Guard-2-86M`
+# (needs HF_TOKEN + accepted Meta licence). Prompt Guard 2 ships id2label
+# {LABEL_0: benign, LABEL_1: malicious}, which the index-1 fallback below handles.
+_MODEL = os.environ.get("INJGUARD_MODEL", "protectai/deberta-v3-base-prompt-injection-v2")
 _tok = AutoTokenizer.from_pretrained(_MODEL)
 _model = AutoModelForSequenceClassification.from_pretrained(_MODEL)
 _model.eval()
