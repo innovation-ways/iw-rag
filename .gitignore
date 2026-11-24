@@ -69,3 +69,6 @@ __pycache__/
 .pytest_cache/
 
 .worktrees/
+
+# Private local material (interview prep, etc.)
+.private/
