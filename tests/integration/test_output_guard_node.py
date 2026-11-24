@@ -338,7 +338,7 @@ async def test_grounded_and_cited_answer_is_answered(clean_pg: str) -> None:
         ),
         patch(
             "iw_rag.agent.nodes._presidio_redact",
-            new=AsyncMock(side_effect=lambda t, c: t),
+            new=AsyncMock(side_effect=lambda t, c, **_kw: t),
         ),
     ):
         from iw_rag.agent.graph import answer_question
@@ -367,7 +367,7 @@ async def test_grounded_answer_pii_redacted(clean_pg: str) -> None:
     assembler = _ContextAwareAssembler(answer_text=pii_answer, citations=[_GROUNDED_CITATION])
     graph = _build_guarded_graph(_SingleChunkSpine(), assembler, llm)
 
-    async def _redact_ssn(text: str, ctx: AccessContext) -> str:
+    async def _redact_ssn(text: str, ctx: AccessContext, **_kw: object) -> str:
         return text.replace(raw_ssn, "<US_SSN>")
 
     with (
@@ -456,7 +456,7 @@ async def test_ungrounded_answer_fails_closed(clean_pg: str) -> None:
         ),
         patch(
             "iw_rag.agent.nodes._presidio_redact",
-            new=AsyncMock(side_effect=lambda t, c: t),
+            new=AsyncMock(side_effect=lambda t, c, **_kw: t),
         ),
     ):
         from iw_rag.agent.graph import answer_question
@@ -519,7 +519,7 @@ async def test_invalid_citation_fails_closed_even_if_grounded(clean_pg: str) -> 
         ),
         patch(
             "iw_rag.agent.nodes._presidio_redact",
-            new=AsyncMock(side_effect=lambda t, c: t),
+            new=AsyncMock(side_effect=lambda t, c, **_kw: t),
         ),
     ):
         from iw_rag.agent.graph import answer_question
@@ -599,7 +599,7 @@ async def test_one_groundedness_authority_no_double_model_call(clean_pg: str) ->
         ),
         patch(
             "iw_rag.agent.nodes._presidio_redact",
-            new=AsyncMock(side_effect=lambda t, c: t),
+            new=AsyncMock(side_effect=lambda t, c, **_kw: t),
         ),
         patch(
             # The standalone scan_output groundedness model — must NOT be called
@@ -673,7 +673,7 @@ async def test_output_guard_verdict_in_trail(clean_pg: str) -> None:
         ),
         patch(
             "iw_rag.agent.nodes._presidio_redact",
-            new=AsyncMock(side_effect=lambda t, c: t),
+            new=AsyncMock(side_effect=lambda t, c, **_kw: t),
         ),
     ):
         from iw_rag.agent.graph import answer_question

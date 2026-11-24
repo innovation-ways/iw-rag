@@ -102,7 +102,7 @@ def test_strict_mode_retries_first_when_budget_remains() -> None:
 _GUARDS_ON = types.SimpleNamespace(guardrails=types.SimpleNamespace(enabled=True))
 
 
-async def _identity_redact(text: str, _ctx: Any) -> str:
+async def _identity_redact(text: str, _ctx: Any, *, allow_text: str | None = None) -> str:
     return text
 
 

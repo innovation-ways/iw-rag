@@ -208,20 +208,44 @@ async def test_output_guard_threads_conversation_memory_as_pii_allowlist() -> No
 
 @pytest.mark.asyncio
 @patch("iw_rag.agent.nodes.get_settings", lambda: _GUARDS_ON)
-async def test_output_guard_no_allowlist_without_conversation_memory() -> None:
-    """No conversation chunks → redactor is called the legacy way (no ``allow_text``).
+async def test_output_guard_allowlists_current_question_without_memory() -> None:
+    """First turn (no memory): the user's OWN current question is the allow text.
 
-    Guarantees the strict (corpus-only) path is byte-for-byte unchanged, so every
-    existing 2-arg ``_presidio_redact`` mock keeps working.
+    "My name is Sérgio" → "Hello, Sérgio!" must not become "Hello, <LOCATION>!".
+    The corpus never contributes — a corpus chunk's PII stays out of allow_text.
     """
+    captured: dict[str, Any] = {}
+
+    async def _fake_redact(text: str, _ctx: Any, *, allow_text: str | None = None) -> str:
+        captured["allow_text"] = allow_text
+        return text
+
+    state = _guard_state([_CORPUS_CHUNK])
+    state["original_question"] = "My name is Sérgio"
+    state["question"] = "rewritten by the LLM: Joana"  # LLM-derived — never allowlisted
+    with patch("iw_rag.agent.nodes._presidio_redact", _fake_redact):
+        out = await output_guard_node(state)
+
+    assert out["output_guard_decision"] == "allow"
+    assert captured["allow_text"] == "My name is Sérgio"
+    assert _CORPUS_CHUNK.content not in captured["allow_text"]
+    assert "Joana" not in captured["allow_text"]
+
+
+@pytest.mark.asyncio
+@patch("iw_rag.agent.nodes.get_settings", lambda: _GUARDS_ON)
+async def test_output_guard_no_allowlist_when_no_user_text() -> None:
+    """No conversation memory and no original question → legacy 2-arg call."""
     captured: dict[str, Any] = {"called": False}
 
     async def _fake_redact(text: str, _ctx: Any) -> str:  # legacy 2-arg signature
         captured["called"] = True
         return text
 
+    state = _guard_state([_CORPUS_CHUNK])
+    state["original_question"] = ""
     with patch("iw_rag.agent.nodes._presidio_redact", _fake_redact):
-        out = await output_guard_node(_guard_state([_CORPUS_CHUNK]))
+        out = await output_guard_node(state)
 
     assert out["output_guard_decision"] == "allow"
     assert captured["called"] is True
@@ -242,3 +266,53 @@ def test_drop_allowlisted_keeps_user_supplied_pii() -> None:
     assert card in kept
     # No allow text → nothing is exempt (legacy behaviour).
     assert _drop_allowlisted(text, [sergio, card], None) == [sergio, card]
+
+
+# ---------------------------------------------------------------------------
+# router — a `skip` with conversation memory is promoted to `retrieve`
+# ---------------------------------------------------------------------------
+
+
+def _router_llm(route: str) -> Any:
+    import json
+    from unittest.mock import AsyncMock
+
+    from iw_rag.generation.llm import LlmResponse
+
+    llm = AsyncMock()
+    llm.complete_structured = AsyncMock(
+        return_value=LlmResponse(
+            text=json.dumps({"query_type": "factual", "route": route}), finish_reason="stop"
+        )
+    )
+    return llm
+
+
+@pytest.mark.asyncio
+async def test_router_promotes_skip_to_retrieve_when_memory_present() -> None:
+    """`skip` (answer_direct) never sees history_chunks — only `retrieve` injects
+    them — so with conversation memory a `skip` must become `retrieve`, or a
+    follow-up like "what is my name?" is answered with no memory at all."""
+    from iw_rag.agent.nodes import make_router
+    from iw_rag.settings import AgentSettings
+
+    router = make_router(_router_llm("skip"), AgentSettings(router_enabled=True, skip_enabled=True))
+    result = await router(_state(history_chunks=[_MEMORY_CHUNK]))  # type: ignore[arg-type]
+
+    assert result["route"] == "retrieve"
+    assert len(result["verdicts"]) == 1
+    assert result["verdicts"][0].value == "retrieve"
+    assert "conversation memory" in result["verdicts"][0].reason
+
+
+@pytest.mark.asyncio
+async def test_router_keeps_skip_without_memory() -> None:
+    """No conversation memory → the `skip` route is unchanged."""
+    from iw_rag.agent.nodes import make_router
+    from iw_rag.settings import AgentSettings
+
+    router = make_router(_router_llm("skip"), AgentSettings(router_enabled=True, skip_enabled=True))
+    result = await router(_state(history_chunks=[]))  # type: ignore[arg-type]
+
+    assert result["route"] == "skip"
+    assert result["verdicts"][0].value == "skip"

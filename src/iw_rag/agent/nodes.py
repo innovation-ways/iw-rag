@@ -123,7 +123,14 @@ from iw_rag.generation.llm import GenerationParams, LlmClient
 from iw_rag.generation.prompts import REFUSAL_TEXT as _GENERATION_REFUSAL_TEXT
 from iw_rag.guardrails.output_guard import validate_citations_from_list
 from iw_rag.guardrails.sanitize import _presidio_redact
-from iw_rag.observability.tracing import current_trace_ref, hash_groups, span
+from iw_rag.observability.tracing import (
+    annotate,
+    annotate_content,
+    current_trace_ref,
+    hash_groups,
+    span,
+)
+from iw_rag.observability.tracing import trace_verdict as _trace_verdict
 from iw_rag.settings import AgentSettings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -324,6 +331,7 @@ def make_router(
                     value="retrieve",
                     reason="router disabled",
                 )
+                _trace_verdict(verdict)
                 return {
                     "route": "retrieve",
                     "query_type": "factual",
@@ -383,6 +391,19 @@ def make_router(
                 reason = "skip disabled" + (f"; {reason}" if reason else "")
 
             # ------------------------------------------------------------------
+            # Chat memory: promote skip → retrieve when prior turns exist.
+            # ``answer_direct`` sees only the bare question; the prior-turn
+            # synthetic chunks (``history_chunks``) are injected solely by the
+            # ``retrieve`` node.  Questions about the conversation itself ("what
+            # is my name?") are exactly what the classifier labels ``skip``, so
+            # without this they would always be answered with no memory.
+            # ``retrieve`` also keeps them grounded + cited (conversation://…).
+            # ------------------------------------------------------------------
+            if actual_route == "skip" and state.get("history_chunks"):
+                actual_route = "retrieve"
+                reason = "skip→retrieve: conversation memory" + (f"; {reason}" if reason else "")
+
+            # ------------------------------------------------------------------
             # Append exactly one verdict
             # ------------------------------------------------------------------
             verdict = Verdict(
@@ -399,6 +420,16 @@ def make_router(
                 query_type,
             )
 
+            _trace_verdict(verdict)
+            annotate(
+                {
+                    "iw_rag.route.actual": actual_route,
+                    "iw_rag.route.intended": intended_route,
+                    "iw_rag.route.query_type": query_type,
+                    "iw_rag.route.history_present": bool(state.get("history_chunks")),
+                }
+            )
+            annotate_content({"input.value": question})
             return {
                 "route": actual_route,
                 "query_type": query_type,
@@ -652,6 +683,7 @@ def make_grade_documents(
                     reason="no chunks to grade",
                     attempt=attempt,
                 )
+                _trace_verdict(verdict)
                 return {
                     "graded": [],
                     "doc_verdict": "incorrect",
@@ -739,6 +771,7 @@ def make_grade_documents(
                 attempt=attempt,
             )
 
+            _trace_verdict(verdict)
             return {
                 "graded": relevant_chunks,
                 "doc_verdict": doc_verdict,
@@ -920,6 +953,9 @@ def make_rewrite_query(
             )
 
             # Only write state["question"] — original_question must remain immutable.
+            _trace_verdict(verdict)
+            annotate({"iw_rag.rewrite.failure_signal": failure_signal})
+            annotate_content({"input.value": original_question, "output.value": rewritten})
             return {
                 "question": rewritten,
                 "verdicts": [verdict],
@@ -1062,6 +1098,7 @@ def make_generate(
         ):
             if assembler is None:
                 verdict = Verdict(kind="generate", value="refused", reason="no assembler wired")
+                _trace_verdict(verdict)
                 return {
                     "draft": None,
                     "citations": [],
@@ -1104,6 +1141,7 @@ def make_generate(
                 generated.grounded,
             )
 
+            _trace_verdict(verdict)
             return {
                 "draft": generated.answer,
                 "citations": generated.citations,
@@ -1305,6 +1343,7 @@ def make_grade_generation(
                 attempt=attempt,
             )
 
+            _trace_verdict(verdict)
             return {
                 "gen_verdict": verdict_value,
                 "verdicts": [verdict],
@@ -1575,6 +1614,7 @@ async def input_guard_node(state: GraphState) -> dict[str, Any]:
             guard_verdict.reason,
         )
 
+        _trace_verdict(verdict)
         return {
             "input_decision": guard_verdict.decision,
             "verdicts": [verdict],
@@ -1882,6 +1922,14 @@ async def sanitize_node(state: GraphState) -> dict[str, Any]:
             attempt,
         )
 
+        annotate(
+            {
+                "iw_rag.sanitize.kept": len(sanitized.chunks),
+                "iw_rag.sanitize.dropped_ids": [str(x) for x in sanitized.dropped_chunk_ids],
+                "iw_rag.sanitize.history_exempt": len(history_chunks),
+            }
+        )
+
         # Re-prepend the exempt chat-memory chunks verbatim (kept their original
         # position ahead of the corpus chunks; never sanitized).
         return {
@@ -2003,15 +2051,21 @@ async def output_guard_node(state: GraphState) -> dict[str, Any]:
         # Provenance-aware carve-out (chat memory): PII the user supplied earlier
         # in THIS conversation — recalled into the answer via conversation-as-
         # source — must not be redacted, or "Sergio" would be scrubbed out of
-        # "your name is Sergio".  The allow text is built ONLY from the graded
-        # conversation chunks (the user's own turns, principal-scoped); the
-        # corpus never contributes.  The kwarg is passed only when such memory is
-        # present, so the strict (no-memory) path + every existing caller / mock
-        # is byte-for-byte unchanged.
+        # "your name is Sergio".  The allow text is built ONLY from the user's
+        # own words: the graded conversation chunks (prior turns, principal-
+        # scoped) plus the CURRENT question as the user typed it
+        # (``original_question`` — never the LLM-rewritten ``question``), so a
+        # first-turn "My name is Sérgio" → "Hello, Sérgio!" is not redacted
+        # either.  The corpus never contributes.  The kwarg is passed only when
+        # such user text is present (otherwise the legacy 2-arg call).
         # ------------------------------------------------------------------
-        memory_text = " ".join(
+        user_text_parts = [
             c.content for c in graded if c.metadata.get("kind") == CONVERSATION_CHUNK_KIND
-        )
+        ]
+        original_question: str = state.get("original_question") or ""
+        if original_question:
+            user_text_parts.append(original_question)
+        memory_text = " ".join(user_text_parts)
         try:
             if memory_text:
                 redacted_draft = await _presidio_redact(draft, ctx, allow_text=memory_text)  # type: ignore[arg-type]
@@ -2087,6 +2141,18 @@ async def output_guard_node(state: GraphState) -> dict[str, Any]:
             invalid_ids,
             attempt,
         )
+
+        _trace_verdict(verdict)
+        annotate(
+            {
+                "iw_rag.output_guard.grounded": grounded,
+                "iw_rag.output_guard.citations_valid": citations_valid,
+                "iw_rag.output_guard.pii_redacted": pii_redacted,
+                "iw_rag.output_guard.invalid_citation_ids": [str(x) for x in invalid_ids],
+            }
+        )
+        if pii_redacted:
+            annotate_content({"iw_rag.output_guard.redacted_draft": redacted_draft})
 
         result: dict[str, Any] = {
             "output_guard_decision": decision_value,
