@@ -49,6 +49,7 @@ import logging
 import mimetypes
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -409,6 +410,34 @@ class DocumentService:
         if stored:
             await anyio.to_thread.run_sync(_cleanup_dir, Path(str(stored)).parent)
         logger.info("document deleted: id=%s by=%s", document_id, ctx.principal_id)
+
+    async def downloadable_ids(self, document_ids: Sequence[str]) -> set[str]:
+        """Return the subset of ``document_ids`` that have staged original bytes.
+
+        Used to decide which citations get a ``download_url``: a document with
+        no ``stored_path`` (bulk-ingested corpus) can only 404 on
+        ``GET /documents/{id}/raw``, so no link is offered for it.  This is NOT
+        an authorization check — ``get_raw`` re-runs the ACL overlap on every
+        download; it only avoids minting a link that is guaranteed broken.
+        Unparseable ids are skipped (never raises for a bad id).
+
+        Args:
+            document_ids: Cited document ids (strings, as on ``Citation``).
+
+        Returns:
+            The input ids (same string form) whose original bytes are stored.
+        """
+        parsed: dict[uuid.UUID, str] = {}
+        for raw_id in document_ids:
+            try:
+                parsed[uuid.UUID(raw_id)] = raw_id
+            except (ValueError, AttributeError, TypeError):
+                continue
+        if not parsed:
+            return set()
+        async with self._db.session() as session:
+            stored = await DocumentRepository(session).ids_with_stored_bytes(list(parsed))
+        return {parsed[u] for u in stored}
 
     async def get_raw(self, ctx: AccessContext, document_id: str) -> RawDocument:
         """Return the staged bytes location for a document the caller may see.

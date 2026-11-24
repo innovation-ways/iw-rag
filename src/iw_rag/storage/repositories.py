@@ -283,6 +283,31 @@ class DocumentRepository:
         result = await self._session.execute(stmt)
         return [cast(uuid.UUID, row[0]) for row in result]
 
+    async def ids_with_stored_bytes(self, document_ids: Sequence[uuid.UUID]) -> set[uuid.UUID]:
+        """Return the subset of ``document_ids`` whose original bytes were staged.
+
+        A document is downloadable via ``GET /documents/{id}/raw`` only when its
+        ``metadata`` carries a ``stored_path`` (set by the upload / attachment
+        path).  Bulk-ingested corpus documents (``make ingest``) index chunks
+        but never stage the original file, so they have no ``stored_path``.
+        One query for the whole set — used to decide which citations get a
+        download link.
+
+        Args:
+            document_ids: Candidate document ids (duplicates are harmless).
+
+        Returns:
+            The ids (subset of the input) that have a ``stored_path``.
+        """
+        if not document_ids:
+            return set()
+        stmt = select(schema.documents.c.id).where(
+            schema.documents.c.id.in_(list(document_ids)),
+            schema.documents.c.metadata.has_key("stored_path"),
+        )
+        result = await self._session.execute(stmt)
+        return {cast(uuid.UUID, row[0]) for row in result}
+
     async def acl_tags_for_document(self, document_id: uuid.UUID) -> list[str]:
         """Return the distinct union of every chunk's ``acl_tags`` for a document.
 

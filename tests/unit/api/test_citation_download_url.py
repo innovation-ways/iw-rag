@@ -445,3 +445,82 @@ def test_query_response_never_exposes_secret(
         headers={"authorization": "Bearer fin-tok"},
     )
     assert _TEST_SECRET not in stream_resp.text
+
+
+# ---------------------------------------------------------------------------
+# No staged bytes → no download link (a link that can only 404 is not offered)
+# ---------------------------------------------------------------------------
+
+
+class _FakeDocumentService:
+    """Document-service stub exposing only the bulk "has stored bytes" lookup."""
+
+    def __init__(self, downloadable: set[str], *, fail: bool = False) -> None:
+        self.downloadable = downloadable
+        self.fail = fail
+        self.asked: list[list[str]] = []
+
+    async def downloadable_ids(self, document_ids: list[str]) -> set[str]:
+        self.asked.append(list(document_ids))
+        if self.fail:
+            raise RuntimeError("db down")
+        return {d for d in document_ids if d in self.downloadable}
+
+    async def session_group_for(self, ctx: AccessContext, session_id: str) -> str | None:
+        return None
+
+
+@pytest.mark.parametrize(
+    ("downloadable", "fail", "expect_link"),
+    [
+        ({"doc-xyz"}, False, True),  # staged bytes → link minted
+        (set(), False, False),  # bulk-ingested corpus doc, no bytes → no link
+        ({"doc-xyz"}, True, False),  # lookup failed → no link, query still 200
+    ],
+)
+def test_query_download_url_only_for_documents_with_stored_bytes(
+    env_with_secret: None,
+    demo_auth: DemoUserAuthenticator,
+    service: _RecordingService,
+    downloadable: set[str],
+    fail: bool,
+    expect_link: bool,
+) -> None:
+    docs = _FakeDocumentService(downloadable, fail=fail)
+    app = create_app(authenticator=demo_auth, query_service=service, document_service=docs)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/query",
+        json={"query": "what is the policy?"},
+        headers={"authorization": "Bearer fin-tok"},
+    )
+    assert resp.status_code == 200
+    cit = resp.json()["citations"][0]
+    assert cit["document_id"] == "doc-xyz"  # always surfaced
+    assert bool(cit["download_url"]) is expect_link
+    assert docs.asked == [["doc-xyz"]]  # one bulk lookup per response
+
+
+@pytest.mark.parametrize(("downloadable", "expect_link"), [({"doc-xyz"}, True), (set(), False)])
+def test_stream_download_url_only_for_documents_with_stored_bytes(
+    env_with_secret: None,
+    demo_auth: DemoUserAuthenticator,
+    service: _RecordingService,
+    downloadable: set[str],
+    expect_link: bool,
+) -> None:
+    docs = _FakeDocumentService(downloadable)
+    app = create_app(authenticator=demo_auth, query_service=service, document_service=docs)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/query/stream",
+        json={"query": "what is the policy?"},
+        headers={"authorization": "Bearer fin-tok"},
+    )
+    assert resp.status_code == 200
+    final = [e for e in _parse_sse(resp.text) if e.get("event") == "final"]
+    cit = json.loads(final[0]["data"])["citations"][0]
+    assert cit["document_id"] == "doc-xyz"
+    assert bool(cit["download_url"]) is expect_link

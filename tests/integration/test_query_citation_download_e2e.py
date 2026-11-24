@@ -152,6 +152,7 @@ async def _seed_doc_with_staged(
     content: str = "The Q3 invoice total is $15000 USD.",
     stored_filename: str = _FILE_NAME,
     stored_bytes: bytes = _FILE_BODY,
+    staged: bool = True,
 ) -> tuple[str, Path]:
     """Seed a document + chunk + actual staged bytes; returns ``(id, path)``."""
     doc_uuid = uuid.uuid4()
@@ -177,7 +178,9 @@ async def _seed_doc_with_staged(
                     "mime": _FILE_MIME,
                     "size_bytes": len(stored_bytes),
                     "kind": "upload",
-                    "stored_path": str(stored_path),
+                    # ``staged=False`` mimics a bulk-ingested corpus doc
+                    # (``make ingest``): chunks indexed, original bytes NOT kept.
+                    **({"stored_path": str(stored_path)} if staged else {}),
                 },
             )
             await chunks.bulk_upsert_chunks(
@@ -604,4 +607,32 @@ async def test_query_citation_carries_document_id_but_empty_download_url_when_se
     # document_id is still populated (additive field).
     assert cit["document_id"] == doc_id
     # download_url is the empty string (no 500).
+    assert cit["download_url"] == ""
+
+
+async def test_query_citation_without_stored_bytes_has_no_download_url(
+    clean_pg: str, tmp_path: Path
+) -> None:
+    """A cited doc with no staged bytes (bulk-ingested corpus) gets NO download link.
+
+    ``GET /documents/{id}/raw`` can only 404 for such a doc, so offering the
+    link is a guaranteed-broken UI.  ``document_id`` is still surfaced.
+    """
+    client, _settings = _build_app(clean_pg, tmp_path, auth_mode="demo")
+    doc_id, _ = await _seed_doc_with_staged(
+        clean_pg,
+        upload_dir=tmp_path,
+        acl_tags=["finance"],
+        content="The Q3 invoice total is $15000 USD.",
+        staged=False,
+    )
+
+    resp = client.post(
+        "/query",
+        json={"query": "what was the invoice total?"},
+        headers={"authorization": "Bearer alice-token"},
+    )
+    assert resp.status_code == 200, resp.text
+    cit = resp.json()["citations"][0]
+    assert cit["document_id"] == doc_id
     assert cit["download_url"] == ""

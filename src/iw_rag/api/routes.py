@@ -113,7 +113,12 @@ def _extract_session_id(ctx: AccessContext) -> str | None:
 
 
 def _citation_to_out(
-    citation: Citation, *, ctx: AccessContext, secret: str, ttl_seconds: int
+    citation: Citation,
+    *,
+    ctx: AccessContext,
+    secret: str,
+    ttl_seconds: int,
+    downloadable: bool = True,
 ) -> CitationOut:
     """Map a domain :class:`Citation` to a :class:`CitationOut` (CR-00098 S05).
 
@@ -141,6 +146,9 @@ def _citation_to_out(
         secret: The configured ``download_token_secret`` (``""`` when
             unset — fail-safe, no token will be minted).
         ttl_seconds: The token lifetime in seconds.
+        downloadable: Whether the cited document has staged original bytes
+            (see :func:`_downloadable_document_ids`).  ``False`` → no link is
+            minted: ``/documents/{id}/raw`` could only 404 for it.
 
     Returns:
         A fully populated :class:`CitationOut` ready to be serialised
@@ -148,7 +156,7 @@ def _citation_to_out(
     """
     document_id = citation.document_id or ""
     download_url = ""
-    if document_id and secret:
+    if document_id and secret and downloadable:
         try:
             session_id = _extract_session_id(ctx)
             token = download_tokens.mint(
@@ -173,6 +181,33 @@ def _citation_to_out(
         document_id=document_id,
         download_url=download_url,
     )
+
+
+async def _downloadable_document_ids(request: Request, document_ids: list[str]) -> set[str] | None:
+    """Which cited documents have staged original bytes (one bulk lookup).
+
+    Bulk-ingested corpus documents index chunks but never stage the original
+    file, so ``GET /documents/{id}/raw`` can only 404 for them — a download
+    link for such a citation is guaranteed broken and must not be offered.
+
+    Returns:
+        ``None`` when no document service is wired (legacy/test wiring — every
+        citation keeps its link, previous behaviour); otherwise the subset of
+        ``document_ids`` that are downloadable.  A lookup failure is fail-soft:
+        it logs and returns ``set()`` (no links) — citation enrichment must
+        never fail the query, and a missing link beats a broken one.
+    """
+    service = getattr(request.app.state, "document_service", None)
+    if service is None or not hasattr(service, "downloadable_ids"):
+        return None
+    ids = sorted({d for d in document_ids if d})
+    if not ids:
+        return set()
+    try:
+        return set(await service.downloadable_ids(ids))
+    except Exception:
+        logger.warning("downloadable-ids lookup failed; omitting download links", exc_info=True)
+        return set()
 
 
 async def get_access_context(request: Request) -> AccessContext:
@@ -349,8 +384,18 @@ async def query(
     ans = outcome.answer
     secret = _download_token_secret(request)
     ttl_seconds = _download_token_ttl_seconds(request)
+    downloadable = await _downloadable_document_ids(
+        request, [c.document_id or "" for c in ans.citations]
+    )
     citations_out = [
-        _citation_to_out(c, ctx=ctx, secret=secret, ttl_seconds=ttl_seconds) for c in ans.citations
+        _citation_to_out(
+            c,
+            ctx=ctx,
+            secret=secret,
+            ttl_seconds=ttl_seconds,
+            downloadable=downloadable is None or (c.document_id or "") in downloadable,
+        )
+        for c in ans.citations
     ]
 
     # Persist the completed turn so the next turn can see it (best-effort).
@@ -439,6 +484,9 @@ async def _sse_generator(
                 if event_type == "final" and isinstance(event_data, dict):
                     citations_raw = event_data.get("citations") or []
                     if citations_raw and "marker" in citations_raw[0]:
+                        downloadable = await _downloadable_document_ids(
+                            request, [str(cit.get("document_id", "")) for cit in citations_raw]
+                        )
                         event_data = {
                             **event_data,
                             "citations": [
@@ -453,6 +501,8 @@ async def _sse_generator(
                                     ctx=ctx,
                                     secret=secret,
                                     ttl_seconds=ttl_seconds,
+                                    downloadable=downloadable is None
+                                    or str(cit.get("document_id", "")) in downloadable,
                                 ).model_dump()
                                 for cit in citations_raw
                             ],
@@ -472,11 +522,18 @@ async def _sse_generator(
 
         ans = outcome.answer
         if ans.grounded:
+            downloadable = await _downloadable_document_ids(
+                request, [c.document_id or "" for c in ans.citations]
+            )
             data = {
                 "answer": ans.answer,
                 "citations": [
                     _citation_to_out(
-                        c, ctx=ctx, secret=secret, ttl_seconds=ttl_seconds
+                        c,
+                        ctx=ctx,
+                        secret=secret,
+                        ttl_seconds=ttl_seconds,
+                        downloadable=downloadable is None or (c.document_id or "") in downloadable,
                     ).model_dump()
                     for c in ans.citations
                 ],
