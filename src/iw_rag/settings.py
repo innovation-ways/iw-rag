@@ -346,11 +346,18 @@ class ObservabilitySettings(BaseModel):
         phoenix_endpoint: OTLP endpoint for Arize Phoenix (None = disabled).
         trace_sample_rate: Fraction of traces to export (1.0 = all).
         log_level: Root log level string.
+        capture_content: Opt-in capture of raw content (questions, prompts,
+            completions, chunk text) into trace spans.  **Default off**
+            (lld-eval-observability §PII-in-traces): the corpus may carry
+            HR/financial PII and the trace store must not silently become a PII
+            repository.  Structural metadata (model, tokens, route, verdicts,
+            document ids/scores) is always traced regardless.
     """
 
     phoenix_endpoint: str | None = None
     trace_sample_rate: float = 1.0
     log_level: str = "INFO"
+    capture_content: bool = False
 
 
 # ---------------------------------------------------------------------------

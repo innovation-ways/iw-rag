@@ -33,7 +33,8 @@ from typing import Any
 from iw_rag.agent.state import GraphState, Verdict
 from iw_rag.domain.errors import AuthorizationError, RetrievalError
 from iw_rag.guardrails.acl import acl_provenance, assert_hotpath_acl
-from iw_rag.observability.tracing import span
+from iw_rag.observability.tracing import annotate, annotate_content, span
+from iw_rag.observability.tracing import trace_verdict as _trace_verdict
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,27 @@ def make_retrieve_node(
                 ),
             )
 
+            _trace_verdict(verdict)
+            # OpenInference RETRIEVER attributes: ids/scores/sources always
+            # (structural), the query + chunk text only under content capture.
+            doc_attrs: dict[str, Any] = {
+                "iw_rag.retrieve.retriever": result.retriever,
+                "iw_rag.retrieve.candidate_count": result.candidate_count,
+                "iw_rag.retrieve.history_count": len(history_chunks),
+            }
+            doc_content: dict[str, Any] = {"input.value": question}
+            for i, c in enumerate(merged_chunks):
+                prefix = f"retrieval.documents.{i}.document"
+                doc_attrs[f"{prefix}.id"] = c.chunk_id
+                doc_attrs[f"{prefix}.score"] = float(c.score)
+                doc_attrs[f"{prefix}.metadata"] = {
+                    "source_uri": c.source_uri,
+                    "document_id": c.document_id,
+                    "retriever": c.retriever,
+                }
+                doc_content[f"{prefix}.content"] = c.content
+            annotate(doc_attrs)
+            annotate_content(doc_content)
             return {
                 "chunks": merged_chunks,  # list[RetrievedChunk] — NEVER Candidate
                 "verdicts": [verdict],

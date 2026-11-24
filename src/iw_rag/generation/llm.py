@@ -16,6 +16,7 @@ from typing import Any, Protocol, runtime_checkable
 import httpx
 
 from iw_rag.domain.errors import GenerationError
+from iw_rag.observability.tracing import annotate, annotate_content, content_capture_enabled, span
 
 Message = dict[str, Any]
 
@@ -162,9 +163,75 @@ class VllmClient:
             body["chat_template_kwargs"] = {"enable_thinking": False}
         return body
 
+    async def _traced_call(self, mode: str, body: dict[str, Any]) -> LlmResponse:
+        """POST + parse inside an OpenInference ``LLM`` span.
+
+        Always records the model, invocation parameters, token usage and finish
+        reason (structural).  The prompt messages and the completion text are
+        recorded only when content capture is opted in (``annotate_content``).
+
+        Args:
+            mode: ``"chat"`` / ``"tools"`` / ``"structured"`` — the call flavour.
+            body: The fully built request body.
+
+        Returns:
+            The parsed :class:`LlmResponse`.
+        """
+        with span("iw_rag.generation.llm", {"llm.mode": mode}, span_kind="LLM"):
+            invocation = {k: body[k] for k in ("temperature", "max_tokens", "seed") if k in body}
+            if "chat_template_kwargs" in body:
+                invocation["chat_template_kwargs"] = body["chat_template_kwargs"]
+            annotate(
+                {
+                    "llm.system": "vllm",
+                    "llm.provider": "vllm",
+                    "llm.model_name": str(body.get("model", "")),
+                    "llm.invocation_parameters": invocation,
+                    "llm.guided_json": "guided_json" in body,
+                    "llm.tool_count": len(body.get("tools") or []),
+                }
+            )
+            if content_capture_enabled():
+                messages = body.get("messages") or []
+                content: dict[str, Any] = {
+                    "input.value": messages,
+                    "input.mime_type": "application/json",
+                }
+                for i, m in enumerate(messages):
+                    content[f"llm.input_messages.{i}.message.role"] = str(m.get("role", ""))
+                    content[f"llm.input_messages.{i}.message.content"] = str(m.get("content") or "")
+                if "guided_json" in body:
+                    content["llm.guided_json_schema"] = body["guided_json"]
+                if body.get("tools"):
+                    content["llm.tools"] = body["tools"]
+                annotate_content(content)
+
+            resp = self._parse(await self._post(body))
+
+            usage = resp.usage or {}
+            annotate(
+                {
+                    "llm.token_count.prompt": usage.get("prompt_tokens"),
+                    "llm.token_count.completion": usage.get("completion_tokens"),
+                    "llm.token_count.total": usage.get("total_tokens"),
+                    "llm.finish_reason": resp.finish_reason,
+                    "llm.tool_call_count": len(resp.tool_calls),
+                }
+            )
+            out: dict[str, Any] = {
+                "output.value": resp.text,
+                "output.mime_type": "text/plain",
+                "llm.output_messages.0.message.role": "assistant",
+                "llm.output_messages.0.message.content": resp.text,
+            }
+            if resp.tool_calls:
+                out["llm.output_tool_calls"] = resp.tool_calls
+            annotate_content(out)
+            return resp
+
     async def complete(self, messages: Sequence[Message], params: GenerationParams) -> LlmResponse:
         """Plain chat completion."""
-        return self._parse(await self._post(self._base(messages, params)))
+        return await self._traced_call("chat", self._base(messages, params))
 
     async def complete_tools(
         self, messages: Sequence[Message], tools: Sequence[ToolSpec], params: GenerationParams
@@ -173,7 +240,7 @@ class VllmClient:
         body = self._base(messages, params)
         body["tools"] = [t.as_openai() for t in tools]
         body["tool_choice"] = "auto"
-        return self._parse(await self._post(body))
+        return await self._traced_call("tools", body)
 
     async def complete_structured(
         self, messages: Sequence[Message], json_schema: dict[str, Any], params: GenerationParams
@@ -181,7 +248,7 @@ class VllmClient:
         """Schema-constrained completion via vLLM ``guided_json``."""
         body = self._base(messages, params)
         body["guided_json"] = json_schema
-        return self._parse(await self._post(body))
+        return await self._traced_call("structured", body)
 
     async def health(self) -> bool:
         """Ping ``/models``."""

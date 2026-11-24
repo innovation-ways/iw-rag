@@ -90,6 +90,7 @@ api:
 observability:
   trace_sample_rate: 1.0
   log_level: INFO
+  capture_content: false          # opt-in raw prompt/completion/chunk text in traces (PII risk)
 
 agent:
   max_retries: 2                  # correction passes before fail-closed (R-00105 F5)

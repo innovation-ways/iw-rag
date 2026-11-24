@@ -731,6 +731,34 @@ def build_graph(
 # ---------------------------------------------------------------------------
 
 
+def _annotate_query_span(question: str, state: Any) -> None:
+    """Attach the request outcome to the root ``iw_rag.query`` span.
+
+    Structural (always): disposition, retries, citation/history counts.
+    Content (opt-in): the question and the final answer / refusal text.
+    """
+    from iw_rag.observability.tracing import annotate, annotate_content
+
+    st = state if isinstance(state, dict) else {}
+    annotate(
+        {
+            "iw_rag.disposition": st.get("disposition"),
+            "iw_rag.retries": st.get("retries"),
+            "iw_rag.route": st.get("route"),
+            "iw_rag.citation_count": len(st.get("citations") or []),
+            "iw_rag.history_turns": len(st.get("history_chunks") or []),
+        }
+    )
+    annotate_content(
+        {
+            "input.value": question,
+            "input.mime_type": "text/plain",
+            "output.value": st.get("answer") or st.get("refusal") or "",
+            "output.mime_type": "text/plain",
+        }
+    )
+
+
 async def answer_question(
     graph: Any,
     question: str,
@@ -816,6 +844,7 @@ async def answer_question(
                     "disposition": "refused",
                     "diagnostics": {"anomaly": "GraphRecursionError"},
                 }
+            _annotate_query_span(question, result)
         total_ms = round((time.perf_counter() - wall_start) * 1000.0, 1)
 
     # Merge the timing breakdown into diagnostics (the diagnostics channel is a
@@ -962,6 +991,7 @@ async def answer_question_stream(
         # Re-raise non-recursion errors; recursion is handled by answer_question
         raise
     finally:
+        _annotate_query_span(question, final_state)
         root_span.__exit__(None, None, None)
 
     # --- terminal event ---

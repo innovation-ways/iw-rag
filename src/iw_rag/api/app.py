@@ -410,7 +410,9 @@ def create_app(
         from iw_rag.observability.tracing import configure_tracing
 
         configure_tracing(
-            endpoint=settings.observability.phoenix_endpoint, service_name="iw-rag-api"
+            endpoint=settings.observability.phoenix_endpoint,
+            service_name="iw-rag-api",
+            capture_content=settings.observability.capture_content,
         )
 
     app = FastAPI(title="iw-rag", version="0.0.0")
